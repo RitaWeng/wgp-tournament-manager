@@ -1,2 +1,0 @@
-# wgp-tournament-manager
- 
