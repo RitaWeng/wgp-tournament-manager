@@ -763,7 +763,7 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
       const p1Index = updatedPlayers.findIndex(p => p.number === match.player1);
       const p2Index = match.player2 === 0 ? -1 : updatedPlayers.findIndex(p => p.number === match.player2);
       
-      // 如果有比賽結果
+      // 如果有比賽結果或是輪空情況
       if (match.player1Score !== undefined && match.player1Score !== null) {
         // 更新選手1的記錄
         updatedPlayers[p1Index].rounds[match.round - 1] = {
@@ -780,6 +780,17 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
             isBlack: !match.player1IsBlack
           };
         }
+      }
+      // 自動處理輪空情況 - 確保輪空選手得到勝分
+      else if (match.player2 === 0) {
+        // 輪空選手自動得到勝分
+        updatedPlayers[p1Index].rounds[match.round - 1] = {
+          score: winPoint, // 輪空獲得勝分
+          opponent: 0, // 輪空
+          isBlack: match.player1IsBlack
+        };
+        // 設置比賽結果，以便顯示
+        match.player1Score = winPoint;
       }
     });
     
@@ -1499,8 +1510,12 @@ const handleFileUpload = (event) => {
     const newMatches = [...matches];
     const match = newMatches[matchIndex];
     
+    // 如果是輪空場次，自動設置player1為勝方
+    if (match.player2 === 0) {
+      match.player1Score = winPoint;
+    }
     // 如果獲勝者是player1，則player1得分為winPoint，否則為0
-    if (match.player1 === winnerNumber) {
+    else if (match.player1 === winnerNumber) {
       match.player1Score = winPoint;
     } else if (match.player2 === winnerNumber) {
       match.player1Score = 0;
@@ -1605,7 +1620,15 @@ const handleFileUpload = (event) => {
                         </div>
                       </div>
                     ) : (
-                      `${getPlayerName(match.player1)} 輪空勝`
+                      <div className="flex flex-col items-center">
+                        <Button 
+                          size="small"
+                          onClick={() => recordResult(index, match.player1)}
+                          type="primary"
+                        >
+                          {getPlayerName(match.player1)} 輪空勝
+                        </Button>
+                      </div>
                     )}
                   </td>
                 </tr>
