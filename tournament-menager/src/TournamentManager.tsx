@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-// 導入用於Excel處理的函數
+// 上傳用於Excel處理的函數
 import * as XLSX from 'xlsx';
 
 // 下載CSV函數
@@ -225,8 +225,174 @@ const TournamentManager = () => {
   
   // 新增狀態用於控制選擇要顯示的回合
   const [selectedRound, setSelectedRound] = useState(1);
+  // 定義一個標誌，用於強制初始化全新數據
+  const [forceNewPlayers, setForceNewPlayers] = useState(false);
+  
   // 新增狀態用於控制分割視窗比例
   const [splitRatio, setSplitRatio] = useState(65);
+  const saveStateToLocalStorage = () => {
+    try {
+      // 建立一個包含所有需要保存的狀態的對象
+      const appState = {
+        allPlayers,
+        rounds,
+        gameType,
+        winPoint,
+        players,
+        matches,
+        matchesByRound,
+        sortByRank,
+        allowSameCountry,
+        currentRound,
+        gameTitle,
+        selectedRound,
+        splitRatio,
+        isPairingButtonDisabled,
+        lastSaved: new Date().toISOString() // 記錄最後保存時間
+      };
+      
+      // 將狀態轉換為 JSON 字符串並保存到 localStorage
+      localStorage.setItem('tournamentManagerState', JSON.stringify(appState));
+      console.log('狀態已自動保存', new Date().toLocaleTimeString());
+    } catch (error) {
+      console.error('保存狀態時發生錯誤:', error);
+    }
+  };
+
+  // 定義一個函數來從 localStorage 加載狀態
+  const loadStateFromLocalStorage = () => {
+    try {
+      // 從 localStorage 獲取保存的 JSON 狀態字符串
+      const savedState = localStorage.getItem('tournamentManagerState');
+      
+      // 如果沒有保存的狀態，直接返回
+      if (!savedState) {
+        console.log('沒有找到保存的狀態');
+        return false;
+      }
+      
+      // 將 JSON 字符串轉換回對象
+      const appState = JSON.parse(savedState);
+      
+      // 恢復各個狀態
+      setAllPlayers(appState.allPlayers);
+      setRounds(appState.rounds);
+      setGameType(appState.gameType);
+      setWinPoint(appState.winPoint);
+      setPlayers(appState.players);
+      setMatches(appState.matches);
+      setMatchesByRound(appState.matchesByRound);
+      setSortByRank(appState.sortByRank);
+      setAllowSameCountry(appState.allowSameCountry);
+      setCurrentRound(appState.currentRound);
+      setGameTitle(appState.gameTitle);
+      setSelectedRound(appState.selectedRound);
+      setSplitRatio(appState.splitRatio);
+      setIsPairingButtonDisabled(appState.isPairingButtonDisabled);
+      
+      console.log('成功加載狀態，最後保存於:', new Date(appState.lastSaved).toLocaleString());
+      message.success(`已恢復上次保存的狀態 (${new Date(appState.lastSaved).toLocaleString()})`);
+      
+      return true;
+    } catch (error) {
+      console.error('加載狀態時發生錯誤:', error);
+      return false;
+    }
+  };
+
+  // 定義一個函數來下載狀態到 JSON 檔案
+  const exportStateToJSON = () => {
+    try {
+      // 建立一個包含所有需要保存的狀態的對象
+      const appState = {
+        allPlayers,
+        rounds,
+        gameType,
+        winPoint,
+        players,
+        matches,
+        matchesByRound,
+        sortByRank,
+        allowSameCountry,
+        currentRound,
+        gameTitle,
+        selectedRound,
+        splitRatio,
+        isPairingButtonDisabled,
+        exportedAt: new Date().toISOString() // 記錄下載時間
+      };
+      
+      // 將狀態轉換為格式化的 JSON 字符串
+      const jsonString = JSON.stringify(appState, null, 2);
+      
+      // 創建下載用的 Blob
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      // 創建一個臨時的 <a> 元素來觸發下載
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${gameTitle}_狀態備份_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      message.success('狀態已下載到 JSON 檔案');
+    } catch (error) {
+      console.error('下載狀態時發生錯誤:', error);
+      message.error('下載狀態時發生錯誤');
+    }
+  };
+
+  // 定義一個函數來從 JSON 檔案上傳狀態
+  const importStateFromJSON = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      try {
+        const appState = JSON.parse(e.target.result);
+        
+        // 檢查上傳的數據是否包含必要的字段
+        if (!appState.players || !appState.matchesByRound) {
+          throw new Error('上傳的 JSON 檔案格式不正確');
+        }
+        
+        // 恢復各個狀態
+        setAllPlayers(appState.allPlayers);
+        setRounds(appState.rounds);
+        setGameType(appState.gameType);
+        setWinPoint(appState.winPoint);
+        setPlayers(appState.players);
+        setMatches(appState.matches);
+        setMatchesByRound(appState.matchesByRound);
+        setSortByRank(appState.sortByRank);
+        setAllowSameCountry(appState.allowSameCountry);
+        setCurrentRound(appState.currentRound);
+        setGameTitle(appState.gameTitle);
+        setSelectedRound(appState.selectedRound);
+        setSplitRatio(appState.splitRatio);
+        setIsPairingButtonDisabled(appState.isPairingButtonDisabled);
+        
+        message.success(`成功上傳狀態，創建於: ${new Date(appState.exportedAt || appState.lastSaved).toLocaleString()}`);
+      } catch (error) {
+        console.error('上傳狀態時發生錯誤:', error);
+        message.error(`上傳狀態時發生錯誤: ${error.message}`);
+      }
+    };
+    
+    reader.onerror = (error) => {
+      console.error('讀取檔案時發生錯誤:', error);
+      message.error('讀取檔案時發生錯誤');
+    };
+    
+    reader.readAsText(file);
+    
+    // 重置 input 以便下次選擇相同檔案時仍然觸發 onChange 事件
+    event.target.value = null;
+  };
 
 // 處理選手隊伍變更
 const handlePlayerNameChange = (playerNumber, newName) => {
@@ -260,12 +426,40 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
 
   // 初始化玩家數據
   useEffect(() => {
-    initializePlayers();
+    // 嘗試從 localStorage 加載狀態，如果沒有再初始化玩家
+    const loaded = loadStateFromLocalStorage();
+    if (!loaded) {
+      initializePlayers();
+    }
+  }, []);
+  
+  // 當 allPlayers 或 rounds 變化時初始化玩家
+  useEffect(() => {
+    if (players.length > 0) { // 避免和初始加載衝突
+      initializePlayers();
+    }
   }, [allPlayers, rounds]);
+  
+  // 使用 useEffect 監聽狀態變化，在變化時自動保存
+  useEffect(() => {
+    // 防止在初始渲染時保存
+    if (players.length > 0) {
+      saveStateToLocalStorage();
+    }
+  }, [allPlayers, rounds, gameType, winPoint, players, matches, matchesByRound, sortByRank, allowSameCountry, currentRound, gameTitle, selectedRound, isPairingButtonDisabled]);
+  
+  // 在組件卸載前執行最後一次保存
+  useEffect(() => {
+    return () => {
+      if (players.length > 0) {
+        saveStateToLocalStorage();
+      }
+    };
+  }, []);
 
-  const initializePlayers = () => {
+  const initializePlayers = (forceNew = forceNewPlayers) => {
     // 檢查是否為現有玩家資料更新
-    if (players.length > 0 && players.length === allPlayers) {
+    if (!forceNew && players.length > 0 && players.length === allPlayers) {
       // 只更新輪數變動
       const updatedPlayers = players.map(player => {
         // 確保 rounds 陣列長度為當前的輪數
@@ -297,7 +491,8 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
       }
       setPlayers(newPlayers);
     }
-    setMatches([]);
+    // 重設強制初始化標記
+    setForceNewPlayers(false);
   };
 
   // 抽籤功能
@@ -1554,8 +1749,11 @@ const handleFileUpload = (event) => {
       }
     }
     
+    // 設置強制初始化標記，確保創建全新玩家資料
+    setForceNewPlayers(true);
+    
     // 重置所有數據
-    initializePlayers();
+    initializePlayers(true); // 傳入 true 強制創建新的玩家數據
     setCurrentRound(1);
     setSortByRank(false);
     setAllowSameCountry(false);
@@ -1567,6 +1765,10 @@ const handleFileUpload = (event) => {
     setSelectedRound(1);
     // 重設抓對按鈕狀態
     setIsPairingButtonDisabled(false);
+    
+    // 清除 localStorage 中保存的狀態
+    localStorage.removeItem('tournamentManagerState');
+    
     message.success('系統已重設！');
   };
 
@@ -1777,7 +1979,10 @@ const handleFileUpload = (event) => {
   return (
     <div className="p-2 max-w-full h-screen flex flex-col">
       <Card className="mb-2 py-1">
-        <Title level={3} className="mb-1">WGP比賽管理系統</Title>
+        <div className="flex justify-between items-center mb-1">
+          <Title level={3} className="mb-0">WGP比賽管理系統</Title>
+          <span className="text-xs text-gray-500">系統會自動保存狀態</span>
+        </div>
         <Divider className="my-1" />
         
         <Row gutter={16} className="mb-1">
@@ -1877,12 +2082,12 @@ const handleFileUpload = (event) => {
         </Row>
         
         <Row gutter={16} className="mt-2">
-          <Col span={6}>
-            <Button onClick={resetSystem} danger block>
+          <Col span={4}>
+            <Button onClick={resetSystem} className="bg-red-100 text-red-700 hover:bg-red-200" block>
               重設
             </Button>
           </Col>
-          <Col span={6}>
+          <Col span={4}>
             <div>
               <input
                 type="file"
@@ -1893,23 +2098,44 @@ const handleFileUpload = (event) => {
               />
               <Button
                 onClick={() => document.getElementById('fileUpload').click()}
-                type="primary"
+                className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
                 block
               >
                 上傳隊伍表
               </Button>
             </div>
           </Col>
-          <Col span={6}>
-            <Button onClick={exportPlayersToExcel} type="primary" block>
-            {/* <Button onClick={exportPlayersToExcel} className="bg-green-500 text-white hover:bg-green-600" block> */}
+          <Col span={4}>
+            <Button onClick={exportPlayersToExcel} className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200" block>
               下載選手成績
             </Button>
           </Col>
-          <Col span={6}>
-            <Button onClick={exportMatchesToExcel} type="primary" block>
-            {/* <Button onClick={exportMatchesToExcel} className="bg-green-500 text-white hover:bg-green-600" block> */}
+          <Col span={4}>
+            <Button onClick={exportMatchesToExcel} className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200" block>
               下載桌次表
+            </Button>
+          </Col>
+          <Col span={4}>
+            <div>
+              <input
+                type="file"
+                id="stateFileImport"
+                style={{ display: 'none' }}
+                onChange={importStateFromJSON}
+                accept=".json"
+              />
+              <Button
+                onClick={() => document.getElementById('stateFileImport').click()}
+                className="bg-sky-100 text-sky-700 hover:bg-sky-200"
+                block
+              >
+                上傳狀態
+              </Button>
+            </div>
+          </Col>
+          <Col span={4}>
+            <Button onClick={exportStateToJSON} className="bg-sky-100 text-sky-700 hover:bg-sky-200" block>
+              下載目前狀態
             </Button>
           </Col>
         </Row>
