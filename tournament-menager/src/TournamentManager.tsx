@@ -230,6 +230,8 @@ const TournamentManager = () => {
   
   // 新增狀態用於控制分割視窗比例
   const [splitRatio, setSplitRatio] = useState(65);
+  // 新增狀態用於控制輔分說明的顯示
+  const [showAuxScoreHelp, setShowAuxScoreHelp] = useState(false);
   const saveStateToLocalStorage = () => {
     try {
       // 建立一個包含所有需要保存的狀態的對象
@@ -248,6 +250,7 @@ const TournamentManager = () => {
         selectedRound,
         splitRatio,
         isPairingButtonDisabled,
+        showAuxScoreHelp,
         lastSaved: new Date().toISOString() // 記錄最後保存時間
       };
       
@@ -289,6 +292,9 @@ const TournamentManager = () => {
       setSelectedRound(appState.selectedRound);
       setSplitRatio(appState.splitRatio);
       setIsPairingButtonDisabled(appState.isPairingButtonDisabled);
+      if (appState.showAuxScoreHelp !== undefined) {
+        setShowAuxScoreHelp(appState.showAuxScoreHelp);
+      }
       
       console.log('成功加載狀態，最後保存於:', new Date(appState.lastSaved).toLocaleString());
       message.success(`已恢復上次保存的狀態 (${new Date(appState.lastSaved).toLocaleString()})`);
@@ -319,6 +325,7 @@ const TournamentManager = () => {
         selectedRound,
         splitRatio,
         isPairingButtonDisabled,
+        showAuxScoreHelp,
         exportedAt: new Date().toISOString() // 記錄下載時間
       };
       
@@ -375,6 +382,9 @@ const TournamentManager = () => {
         setSelectedRound(appState.selectedRound);
         setSplitRatio(appState.splitRatio);
         setIsPairingButtonDisabled(appState.isPairingButtonDisabled);
+        if (appState.showAuxScoreHelp !== undefined) {
+          setShowAuxScoreHelp(appState.showAuxScoreHelp);
+        }
         
         message.success(`成功上傳狀態，創建於: ${new Date(appState.exportedAt || appState.lastSaved).toLocaleString()}`);
       } catch (error) {
@@ -446,7 +456,7 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     if (players.length > 0) {
       saveStateToLocalStorage();
     }
-  }, [allPlayers, rounds, gameType, winPoint, players, matches, matchesByRound, sortByRank, allowSameCountry, currentRound, gameTitle, selectedRound, isPairingButtonDisabled]);
+  }, [allPlayers, rounds, gameType, winPoint, players, matches, matchesByRound, sortByRank, allowSameCountry, currentRound, gameTitle, selectedRound, isPairingButtonDisabled, showAuxScoreHelp]);
   
   // 在組件卸載前執行最後一次保存
   useEffect(() => {
@@ -1980,76 +1990,95 @@ const handleFileUpload = (event) => {
     <div className="p-2 max-w-full h-screen flex flex-col">
       <Card className="mb-2 py-1">
         <div className="flex justify-between items-center mb-1">
-          <Title level={3} className="mb-0">WGP比賽管理系統</Title>
+          <div className="flex items-center gap-2">
+            <Title level={3} className="mb-0">WGP比賽管理系統</Title>
+            <Button 
+              size="small"
+              onClick={() => setShowAuxScoreHelp(true)}
+              className="bg-blue-100 text-blue-700 hover:bg-blue-200"
+            >
+              輔分說明
+            </Button>
+          </div>
           <span className="text-xs text-gray-500">系統會自動保存狀態</span>
         </div>
         <Divider className="my-1" />
         
         <Row gutter={16} className="mb-1">
-          <Col span={6}>
-            <div className="text-sm">賽制:</div>
-            <Select 
-              value={gameType} 
-              onChange={setGameType} 
-              style={{ width: '100%' }}
-            >
-              <Option value="瑞士制">瑞士制</Option>
-              <Option value="單循環">單循環</Option>
-            </Select>
+          <Col span={4}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm whitespace-nowrap">賽制:</span>
+              <Select 
+                value={gameType} 
+                onChange={setGameType} 
+                style={{ width: '100%' }}
+              >
+                <Option value="瑞士制">瑞士制</Option>
+                <Option value="單循環">單循環</Option>
+              </Select>
+            </div>
           </Col>
           
-          <Col span={6}>
-            <div className="text-sm">比賽項目:</div>
-            <Select 
-              value={gameTitle} 
-              onChange={setGameTitle} 
-              style={{ width: '100%' }}
-            >
-              <Option value="WGP">WGP GiveMe5</Option>
-            </Select>
+          <Col span={4}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm whitespace-nowrap">比賽項目:</span>
+              <Select 
+                value={gameTitle} 
+                onChange={setGameTitle} 
+                style={{ width: '100%' }}
+              >
+                <Option value="WGP">WGP GiveMe5</Option>
+              </Select>
+            </div>
           </Col>
           
-          <Col span={6}>
-            <div className="text-sm">參賽隊伍數:</div>
-            <InputNumber 
-              min={2} 
-              value={allPlayers} 
-              onChange={setAllPlayers} 
-              style={{ width: '100%' }}
-            />
+          <Col span={4}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm whitespace-nowrap">參賽隊伍數:</span>
+              <InputNumber 
+                min={2} 
+                value={allPlayers} 
+                onChange={setAllPlayers} 
+                style={{ width: '100%' }}
+              />
+            </div>
           </Col>
           
-          <Col span={6}>
-            <div className="text-sm">比賽輪數:</div>
-            <InputNumber 
-              min={1} 
-              value={rounds} 
-              onChange={setRounds} 
-              style={{ width: '100%' }}
-            />
-          </Col>
-        </Row>
-        
-        <Row gutter={16} className="mb-1">
-          <Col span={12}>
-            <div className="text-sm">勝方得分:</div>
-            <InputNumber 
-              min={1} 
-              value={winPoint} 
-              onChange={setWinPoint} 
-              style={{ width: '100%' }}
-            />
+          <Col span={4}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm whitespace-nowrap">比賽輪數:</span>
+              <InputNumber 
+                min={1} 
+                value={rounds} 
+                onChange={setRounds} 
+                style={{ width: '100%' }}
+              />
+            </div>
           </Col>
           
-          <Col span={12}>
-            <div className="text-sm">當前輪次:</div>
-            <InputNumber 
-              min={1} 
-              max={rounds} 
-              value={currentRound} 
-              onChange={setCurrentRound} 
-              style={{ width: '100%' }}
-            />
+          <Col span={4}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm whitespace-nowrap">勝方得分:</span>
+              <InputNumber 
+                min={1} 
+                value={winPoint} 
+                onChange={setWinPoint} 
+                style={{ width: '100%' }}
+              />
+            </div>
+          </Col>
+          
+          <Col span={4}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm whitespace-nowrap">當前輪次:</span>
+              <InputNumber 
+                min={1} 
+                max={rounds} 
+                value={currentRound} 
+                onChange={setCurrentRound} 
+                style={{ width: '100%' }}
+              />
+            </div>
           </Col>
         </Row>
         
@@ -2172,13 +2201,35 @@ const handleFileUpload = (event) => {
         </div>
       </div>
       
-      <div className="mt-1 p-2 bg-white shadow rounded">
-        <Title level={4}>輔分說明</Title>
-        <p><strong>輔分一</strong>：所遇對手之總分和。隊伍遇到的所有對手總分加總。</p>
-        <p><strong>輔分二</strong>：所負對手之總分和。隊伍輸掉的比賽中，對手的總分加總。</p>
-        <p><strong>輔分三</strong>：(待確認)如曾對戰過，彼此交戰之勝負(勝方+1)。</p>
-        {/* 彼此對戰之勝負差。當總分、輔分一及輔分二皆相同時，計算在這組選手中的勝負差（勝場數減去負場數）。正數表示贏多輸少，負數表示輸多贏少。</p> */}
-      </div>
+      {/* 輔分說明彈窗 */}
+      {showAuxScoreHelp && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <Title level={4} className="mb-0">輔分說明</Title>
+              <button 
+                onClick={() => setShowAuxScoreHelp(false)}
+                className="text-gray-500 hover:text-gray-700 text-xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="space-y-3">
+              <p><strong>輔分一</strong>：所遇對手之總分和。隊伍遇到的所有對手總分加總。</p>
+              <p><strong>輔分二</strong>：所負對手之總分和。隊伍輸掉的比賽中，對手的總分加總。</p>
+              <p><strong>輔分三</strong>：如曾對戰過，彼此交戰之勝負(勝方+1)。</p>
+            </div>
+            <div className="mt-6 text-right">
+              <Button 
+                onClick={() => setShowAuxScoreHelp(false)}
+                type="primary"
+              >
+                關閉
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
