@@ -1,7 +1,8 @@
 # WGP 比賽管理系統
 
 專為 WGP GiveMe5 棋賽設計的桌次管理工具，支援瑞士制配對、輔分計算、多輪次管理，並可匯出 Excel 成績表。
-發布在: https://ritaweng.github.io/wgp-tournament-manager/
+
+線上版：https://ritaweng.github.io/wgp-tournament-manager/
 ---
 
 ## 功能特色
@@ -62,7 +63,6 @@ wgp-tournament-manager/
     ├── public/
     │   ├── index.html
     │   └── icon.ico
-    ├── electron.js                # Electron 主程序
     ├── webpack.config.js
     ├── tailwind.config.js
     ├── tsconfig.json
@@ -92,23 +92,6 @@ npm run build
 # 輸出至 dist/
 ```
 
-### 以 Electron 執行（桌面應用）
-
-```bash
-# 開發模式（需先啟動 webpack-dev-server）
-npm run electron-dev
-
-# 直接執行已建置的版本
-npm run electron
-```
-
-### 打包成 Windows 安裝檔
-
-```bash
-npm run dist
-# 輸出至 release/（NSIS 安裝程式）
-```
-
 ---
 
 ## 技術架構
@@ -118,7 +101,6 @@ npm run dist
 | 前端框架 | React 18 + TypeScript |
 | 樣式 | Tailwind CSS |
 | 打包工具 | Webpack 5 |
-| 桌面封裝 | Electron |
 | Excel 讀寫 | SheetJS (xlsx) |
 | 部署 | GitHub Pages（`gh-pages`） |
 
