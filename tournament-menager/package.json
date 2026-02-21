@@ -1,13 +1,13 @@
 {
     "name": "tournament-manager",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "棋賽管理系統",
     "homepage": "https://RitaWeng.github.io/wgp-tournament-manager",
     "scripts": {
         "start": "webpack serve --mode development --open",
         "build": "webpack --mode production",
         "predeploy": "npm run build",
-        "deploy": "gh-pages -d dist",
+        "deploy": "gh-pages -d dist --repo https://github.com/RitaWeng/wgp-tournament-manager.git",
         "preversion": "git diff --exit-code && git diff --cached --exit-code",
         "postversion": "git push && git push --tags",
         "test": "echo \"Error: no test specified\" && exit 1"
