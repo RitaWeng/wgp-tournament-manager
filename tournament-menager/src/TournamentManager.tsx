@@ -1878,6 +1878,8 @@ const handleFileUpload = (event) => {
 
   // 重設系統
   const resetSystem = () => {
+    if (!window.confirm('確定要重設系統嗎？\n所有輪次的桌次、比賽結果及選手資料將全部清除，此操作無法復原。')) return;
+
     // 檢查瑞士制輪數設定
     if (gameType === '瑞士制') {
       const maxRounds = Math.ceil(Math.log2(allPlayers));
