@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 // 上傳用於Excel處理的函數
 import * as XLSX from 'xlsx';
 
+import packageInfo from '../package.json';
+
 // 下載CSV函數
 const downloadCSV = (content, fileName) => {
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
@@ -31,12 +33,21 @@ const downloadExcel = (data, fileName) => {
 };
 
 // 自定義基本組件
-const Title = ({ level, children }) => {
-  const Tag = `h${level || 2}`;
-  return <Tag className="font-bold mb-2">{children}</Tag>;
+const Title = ({ level, children, className }: { level?: number; children?: React.ReactNode; className?: string }) => {
+  const Tag = `h${level || 2}` as keyof JSX.IntrinsicElements;
+  return <Tag className={`font-bold mb-2 ${className || ''}`}>{children}</Tag>;
 };
 
-const Button = ({ onClick, type, block, danger, size, children, className, disabled }) => {
+const Button = ({ onClick, type, block, danger, size, children, className, disabled }: {
+  onClick?: () => void;
+  type?: string;
+  block?: boolean;
+  danger?: boolean;
+  size?: string;
+  children?: React.ReactNode;
+  className?: string;
+  disabled?: boolean;
+}) => {
   const getButtonClass = () => {
     let classes = "px-3 py-1 rounded font-medium focus:outline-none ";
     
@@ -82,7 +93,7 @@ const Option = ({ value, children }) => {
   return <option value={value}>{children}</option>;
 };
 
-const InputNumber = ({ min, max, value, onChange, style }) => {
+const InputNumber = ({ min, max, value, onChange, style }: { min?: number; max?: number; value: number; onChange: (v: number) => void; style?: React.CSSProperties }) => {
   return (
     <input 
       type="number"
@@ -118,8 +129,8 @@ const Card = ({ className, children }) => {
   );
 };
 
-const Divider = () => {
-  return <hr className="my-2" />;
+const Divider = ({ className }: { className?: string } = {}) => {
+  return <hr className={`my-2 ${className || ''}`} />;
 };
 
 const Row = ({ gutter, className, children }) => {
@@ -222,6 +233,8 @@ const TournamentManager = () => {
   const [editMode, setEditMode] = useState(false);
   // 新增狀態用於控制「抓對」按鈕是否可用
   const [isPairingButtonDisabled, setIsPairingButtonDisabled] = useState(false);
+  // 記錄哪些輪次已完成算分（鎖定）
+  const [scoredRounds, setScoredRounds] = useState<number[]>([]);
   
   // 新增狀態用於控制選擇要顯示的回合
   const [selectedRound, setSelectedRound] = useState(1);
@@ -232,6 +245,8 @@ const TournamentManager = () => {
   const [splitRatio, setSplitRatio] = useState(65);
   // 新增狀態用於控制輔分說明的顯示
   const [showAuxScoreHelp, setShowAuxScoreHelp] = useState(false);
+  // 新增狀態用於控制關於/聯絡資訊的顯示
+  const [showAboutInfo, setShowAboutInfo] = useState(false);
   const saveStateToLocalStorage = () => {
     try {
       // 建立一個包含所有需要保存的狀態的對象
@@ -251,6 +266,7 @@ const TournamentManager = () => {
         splitRatio,
         isPairingButtonDisabled,
         showAuxScoreHelp,
+        scoredRounds,
         lastSaved: new Date().toISOString() // 記錄最後保存時間
       };
       
@@ -295,7 +311,10 @@ const TournamentManager = () => {
       if (appState.showAuxScoreHelp !== undefined) {
         setShowAuxScoreHelp(appState.showAuxScoreHelp);
       }
-      
+      if (appState.scoredRounds !== undefined) {
+        setScoredRounds(appState.scoredRounds);
+      }
+
       console.log('成功加載狀態，最後保存於:', new Date(appState.lastSaved).toLocaleString());
       message.success(`已恢復上次保存的狀態 (${new Date(appState.lastSaved).toLocaleString()})`);
       
@@ -326,6 +345,7 @@ const TournamentManager = () => {
         splitRatio,
         isPairingButtonDisabled,
         showAuxScoreHelp,
+        scoredRounds,
         exportedAt: new Date().toISOString() // 記錄下載時間
       };
       
@@ -385,7 +405,10 @@ const TournamentManager = () => {
         if (appState.showAuxScoreHelp !== undefined) {
           setShowAuxScoreHelp(appState.showAuxScoreHelp);
         }
-        
+        if (appState.scoredRounds !== undefined) {
+          setScoredRounds(appState.scoredRounds);
+        }
+
         message.success(`成功上傳狀態，創建於: ${new Date(appState.exportedAt || appState.lastSaved).toLocaleString()}`);
       } catch (error) {
         console.error('上傳狀態時發生錯誤:', error);
@@ -456,7 +479,7 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     if (players.length > 0) {
       saveStateToLocalStorage();
     }
-  }, [allPlayers, rounds, gameType, winPoint, players, matches, matchesByRound, sortByRank, allowSameCountry, currentRound, gameTitle, selectedRound, isPairingButtonDisabled, showAuxScoreHelp]);
+  }, [allPlayers, rounds, gameType, winPoint, players, matches, matchesByRound, sortByRank, allowSameCountry, currentRound, gameTitle, selectedRound, isPairingButtonDisabled, showAuxScoreHelp, scoredRounds]);
   
   // 在組件卸載前執行最後一次保存
   useEffect(() => {
@@ -605,173 +628,283 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
   
 
 
-  // 瑞士制配對
-  // 嘗試配對未對戰過的選手
-  const attemptPairingWithoutRematches = (sortedPlayers, paired, newMatches) => {
-    for (let i = 0; i < sortedPlayers.length; i++) {
-      if (paired.has(sortedPlayers[i].number)) continue;
-      
-      const player1 = sortedPlayers[i];
-      
-      for (let j = i + 1; j < sortedPlayers.length; j++) {
-        const player2 = sortedPlayers[j];
-        
-        if (paired.has(player2.number)) continue;
-        
-        // 檢查是否已經對戰過
-        const alreadyPlayed = player1.rounds.some(round => 
-          round.opponent === player2.number
-        );
-        
-        // 檢查國家限制
-        const sameCountry = !allowSameCountry && 
-                            player1.country && 
-                            player2.country && 
-                            player1.country === player2.country;
-        
-        if (!alreadyPlayed && !sameCountry) {
-          newMatches.push({
-            table: newMatches.length + 1,
-            player1: player1.number,
-            player2: player2.number,
-            round: currentRound,
-            // 決定誰先手 (黑方)
-            player1IsBlack: determineFirstMove(player1, player2, currentRound)
-          });
-          
-          paired.add(player1.number);
-          paired.add(player2.number);
-          break;
-        }
-      }
-    }
-  };
+  // 瑞士制抓對主函數（分組回溯法，對應 VBA Sub VS 邏輯）
+  // 計算輪動平衡（對應 VBA CountTurn）
+  // 輪高（對手分較高）：+1；輪低（對手分較低）：-1；同分：0
+  // 對應 VBA 以儲存格顏色記錄：16754599（黃=輪高）+1，16764108（綠=輪低）-1
+  const computeFloatBalance = (playersList) => {
+    const floatBalances = new Map<number, number>(playersList.map(p => [p.number as number, 0]));
+    if (playersList.length === 0) return floatBalances;
 
-  // 允許重複對戰的配對
-  const attemptPairingWithRematches = (sortedPlayers, paired, newMatches) => {
-    for (let i = 0; i < sortedPlayers.length; i++) {
-      if (paired.has(sortedPlayers[i].number)) continue;
-      
-      const player1 = sortedPlayers[i];
-      
-      for (let j = i + 1; j < sortedPlayers.length; j++) {
-        const player2 = sortedPlayers[j];
-        
-        if (paired.has(player2.number)) continue;
-        
-        // 只檢查國家限制，忽略是否已對戰過
-        const sameCountry = !allowSameCountry && 
-                            player1.country && 
-                            player2.country && 
-                            player1.country === player2.country;
-        
-        if (!sameCountry) {
-          newMatches.push({
-            table: newMatches.length + 1,
-            player1: player1.number,
-            player2: player2.number,
-            round: currentRound,
-            player1IsBlack: determineFirstMove(player1, player2, currentRound)
-          });
-          
-          paired.add(player1.number);
-          paired.add(player2.number);
-          break;
+    const roundCount = playersList[0].rounds.length;
+    for (let r = 0; r < roundCount; r++) {
+      // 確認本輪所有選手皆有結果，否則停止
+      if (!playersList.every(p => p.rounds[r] && p.rounds[r].score !== null)) break;
+
+      // 計算第 r 輪（0-indexed）前各選手的分數（rounds 0..r-1 之和）
+      const scoresBeforeRound = new Map<number, number>(
+        playersList.map(p => [
+          p.number as number,
+          p.rounds.slice(0, r).reduce((sum: number, rd) => sum + ((rd.score as number) ?? 0), 0)
+        ])
+      );
+
+      const processed = new Set();
+      playersList.forEach(p => {
+        const rd = p.rounds[r];
+        if (!rd || rd.score === null || !rd.opponent || rd.opponent === 0) return;
+        const pairKey = Math.min(p.number, rd.opponent) + '-' + Math.max(p.number, rd.opponent);
+        if (processed.has(pairKey)) return;
+        processed.add(pairKey);
+
+        const pScore = scoresBeforeRound.get(p.number) ?? 0;
+        const oppScore = scoresBeforeRound.get(rd.opponent) ?? 0;
+        if (pScore > oppScore) {
+          floatBalances.set(p.number, (floatBalances.get(p.number) ?? 0) - 1);
+          floatBalances.set(rd.opponent, (floatBalances.get(rd.opponent) ?? 0) + 1);
+        } else if (pScore < oppScore) {
+          floatBalances.set(p.number, (floatBalances.get(p.number) ?? 0) + 1);
+          floatBalances.set(rd.opponent, (floatBalances.get(rd.opponent) ?? 0) - 1);
         }
-      }
-    }
-    
-    // 如果仍有未配對的選手，忽略所有限制進行配對
-    for (let i = 0; i < sortedPlayers.length; i++) {
-      if (paired.has(sortedPlayers[i].number)) continue;
-      
-      const player1 = sortedPlayers[i];
-      
-      for (let j = i + 1; j < sortedPlayers.length; j++) {
-        const player2 = sortedPlayers[j];
-        
-        if (paired.has(player2.number)) continue;
-        
-        // 無條件配對
-        newMatches.push({
-          table: newMatches.length + 1,
-          player1: player1.number,
-          player2: player2.number,
-          round: currentRound,
-          player1IsBlack: determineFirstMove(player1, player2, currentRound)
-        });
-        
-        paired.add(player1.number);
-        paired.add(player2.number);
-        break;
-      }
-    }
-  };
-  // 處理輪空選手
-  const handleByePlayer = (sortedPlayers, paired, newMatches) => {
-    // 尋找最低分且尚未配對的選手
-    const byePlayer = [...sortedPlayers].reverse().find(player => 
-      !paired.has(player.number)
-    );
-    
-    if (byePlayer) {
-      newMatches.push({
-        table: newMatches.length + 1,
-        player1: byePlayer.number,
-        player2: 0, // 0 表示輪空
-        round: currentRound,
-        player1IsBlack: true
+        // 同分：不更新輪動平衡
       });
-      
-      paired.add(byePlayer.number);
     }
+    return floatBalances;
   };
 
-  //瑞士制抓對主函數
   const generateSwissPairings = () => {
-    // 根據總分排序
-    const sortedPlayers = [...players].sort((a, b) => b.totalScore - a.totalScore);
+    const playerCount = players.length;
+    if (playerCount < 2) {
+      message.warning('選手人數不足，無法抓對');
+      return;
+    }
+
+    // 計算輪動平衡（VBA VS() 明確排序鍵之一）
+    const floatBalances = computeFloatBalance(players);
+
+    // VBA VS() 排序的實效鍵（穩定排序複合效果）：
+    // 1. 總分降冪（VS() 明確鍵）
+    // 2. 輪動平衡升冪（VS() 明確鍵；被輪高多者排後，下輪較可能輪低）
+    // 3. 輔分一/二/三降冪（繼承 SortRank() 的行順序，透過穩定排序傳遞）
+    // 4. 籤號升冪（最終穩定排序）
+    const sortedPlayers = [...players].sort((a, b) => {
+      if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+      const fa = floatBalances.get(a.number) ?? 0;
+      const fb = floatBalances.get(b.number) ?? 0;
+      if (fa !== fb) return fa - fb;
+      if (b.auxScore1 !== a.auxScore1) return b.auxScore1 - a.auxScore1;
+      if (b.auxScore2 !== a.auxScore2) return b.auxScore2 - a.auxScore2;
+      if (b.auxScore3 !== a.auxScore3) return b.auxScore3 - a.auxScore3;
+      return a.number - b.number;
+    });
+
+    const isOdd = playerCount % 2 === 1;
+    // 補成偶數；index >= playerCount 的位置為輪空虛擬槽
+    const vsPlayerCount = playerCount + (isOdd ? 1 : 0);
+
+    // groupNum[i]：選手 i 所屬組別（從 1 開始）
+    const groupNum = new Array(vsPlayerCount).fill(1);
+    // groupOrder[i]：組內配對序號（0 = 尚未配對）
+    const groupOrder = new Array(vsPlayerCount).fill(0);
+
+    const getNum     = (idx) => idx < playerCount ? sortedPlayers[idx].number : 0;
+    const getScore   = (idx) => idx < playerCount ? sortedPlayers[idx].totalScore : -Infinity;
+    const getCountry = (idx) => idx < playerCount ? (sortedPlayers[idx].country || '') : '';
+
+    const hasPlayedBefore = (idx1, idx2) => {
+      if (idx1 >= playerCount || idx2 >= playerCount) return false;
+      const p2Num = getNum(idx2);
+      return sortedPlayers[idx1].rounds.some(r => r.opponent === p2Num);
+    };
+
+    const conflictsCountry = (idx1, idx2) => {
+      if (allowSameCountry) return false;
+      const c1 = getCountry(idx1), c2 = getCountry(idx2);
+      return c1 !== '' && c2 !== '' && c1 === c2;
+    };
+
+    // 分組：相同總分的選手依序兩兩分到同一組（確保每組人數為偶數）
+    groupNum[0] = 1;
+    if (vsPlayerCount > 1) groupNum[1] = 1;
+    for (let i = 2; i < vsPlayerCount; i += 2) {
+      const g = getScore(i) === getScore(i - 2) ? groupNum[i - 2] : groupNum[i - 2] + 1;
+      groupNum[i] = g;
+      if (i + 1 < vsPlayerCount) groupNum[i + 1] = g;
+    }
+
+    // vsRecord[g]：本組已完成的配對記錄（供回溯使用）
+    const vsRecord = Array.from({ length: Math.max(...groupNum) + 2 }, () => []);
+
+    let nowGroup = 1;
+
+    groupLoop: while (true) {
+      // ===== GroupOK：重設當前組的配對狀態 =====
+      let groupPlayerCount = 0;
+      let totalWait = 0;
+      for (let i = 0; i < vsPlayerCount; i++) {
+        if (groupNum[i] === nowGroup) {
+          groupOrder[i] = 0;
+          groupPlayerCount++;
+        }
+      }
+      for (let i = 0; i < vsPlayerCount; i++) {
+        if (groupOrder[i] === 0) totalWait++;
+      }
+      if (totalWait === 0) break; // 全部配對完成（VSOK）
+
+      if (groupPlayerCount === 0) {
+        // 此組無人，將後面各組號碼縮減
+        for (let i = 0; i < vsPlayerCount; i++) {
+          if (groupNum[i] > nowGroup) groupNum[i]--;
+        }
+        continue groupLoop;
+      }
+
+      let nowGroupWait = groupPlayerCount;
+      vsRecord[nowGroup] = [];
+      let nowGroupOrder = 1;
+      let needReCrawl = false;
+
+      // ===== VSNext：組內配對（含回溯） =====
+      vsNextLoop: while (true) {
+        // 尋找本組索引最大（分數最低）的未配對選手
+        let iIdx = -1;
+        for (let i = vsPlayerCount - 1; i >= 0; i--) {
+          if (groupNum[i] === nowGroup && groupOrder[i] === 0) { iIdx = i; break; }
+        }
+        if (iIdx === -1) {
+          // 本組全部配對完畢
+          nowGroup++;
+          while (vsRecord.length <= nowGroup) vsRecord.push([]);
+          continue groupLoop;
+        }
+
+        let searchI = iIdx;
+        let iiStart = iIdx - 1;
+
+        // 含回溯的搜尋迴圈
+        innerSearch: while (true) {
+          for (let iiIdx = iiStart; iiIdx >= 0; iiIdx--) {
+            if (groupNum[iiIdx] === nowGroup && groupOrder[iiIdx] === 0) {
+              if (!hasPlayedBefore(searchI, iiIdx) && !conflictsCountry(searchI, iiIdx)) {
+                // 找到合法配對
+                groupOrder[searchI] = nowGroupOrder;
+                groupOrder[iiIdx]   = nowGroupOrder;
+                vsRecord[nowGroup].push({ i: searchI, ii: iiIdx });
+                nowGroupOrder++;
+                nowGroupWait -= 2;
+                if (nowGroupWait === 0) {
+                  nowGroup++;
+                  while (vsRecord.length <= nowGroup) vsRecord.push([]);
+                  continue groupLoop;
+                }
+                continue vsNextLoop;
+              }
+            }
+          }
+          // 找不到配對對象
+          if (vsRecord[nowGroup].length > 0) {
+            // 回溯：撤銷最後一組配對，改試其他組合
+            const lp = vsRecord[nowGroup].pop();
+            groupOrder[lp.i]  = 0;
+            groupOrder[lp.ii] = 0;
+            nowGroupOrder--;
+            nowGroupWait += 2;
+            searchI = lp.i;
+            iiStart = lp.ii - 1;
+            continue innerSearch;
+          } else {
+            // 連第一組都無法配對，需要向後組借人
+            needReCrawl = true;
+            break vsNextLoop;
+          }
+        }
+      }
+
+      // ===== ReCrawlBeforePlayer：向後借人擴大本組 =====
+      if (needReCrawl) {
+        reCrawlLoop: while (true) {
+          vsRecord[nowGroup] = [];
+          let added = 0;
+          for (let j = 0; j < vsPlayerCount; j++) {
+            if (groupNum[j] > nowGroup) {
+              groupNum[j] = nowGroup;
+              added++;
+              if (added === 2) continue groupLoop; // 借到 2 人，回到 GroupOK 重試
+            }
+          }
+          // 借不到 2 人，往前一組退
+          if (nowGroup > 1) {
+            nowGroup--;
+            continue reCrawlLoop;
+          } else {
+            alert('無法完成配對，請確認選手資料是否正常。');
+            return;
+          }
+        }
+      }
+    }
+
+    // ===== 建立桌次表 =====
+    const pairMap = new Map();
+    for (let i = 0; i < vsPlayerCount; i++) {
+      if (groupOrder[i] === 0) continue;
+      const key = `${groupNum[i]}-${groupOrder[i]}`;
+      if (!pairMap.has(key)) pairMap.set(key, []);
+      pairMap.get(key).push(i);
+    }
+
     const newMatches = [];
-    const paired = new Set();
-    
-    // 判斷是否為奇數人參賽
-    const isOddPlayers = sortedPlayers.length % 2 === 1;
-    
-    // 第一階段：嘗試找未對戰過的對手
-    attemptPairingWithoutRematches(sortedPlayers, paired, newMatches);
-    
-    // 第二階段：允許重複對戰
-    if (paired.size < sortedPlayers.length - (isOddPlayers ? 1 : 0)) {
-      attemptPairingWithRematches(sortedPlayers, paired, newMatches);
+    let tableNum = 1;
+
+    const sortedKeys = Array.from(pairMap.keys()).sort((a, b) => {
+      const [ag, ao] = a.split('-').map(Number);
+      const [bg, bo] = b.split('-').map(Number);
+      // 組號升冪（分數高的組排前面），組內序號降冪（排名最高的對局排前面拿到低桌號）
+      return ag !== bg ? ag - bg : bo - ao;
+    });
+
+    for (const key of sortedKeys) {
+      const idxs = pairMap.get(key);
+      if (idxs.length !== 2) continue;
+      const idx1 = Math.min(idxs[0], idxs[1]); // 分數較高（索引較小）
+      const idx2 = Math.max(idxs[0], idxs[1]); // 分數較低（索引較大）
+
+      if (idx2 >= playerCount) {
+        // 輪空
+        newMatches.push({
+          table: tableNum++,
+          player1: getNum(idx1),
+          player2: 0,
+          round: currentRound,
+          player1IsBlack: true
+        });
+      } else {
+        const p1 = sortedPlayers[idx1];
+        const p2 = sortedPlayers[idx2];
+        newMatches.push({
+          table: tableNum++,
+          player1: p1.number,
+          player2: p2.number,
+          round: currentRound,
+          player1IsBlack: determineFirstMove(p1, p2, currentRound)
+        });
+      }
     }
-    
-    // 處理未配對的選手（只有奇數人時才應該有一人輪空）
-    if (isOddPlayers && paired.size < sortedPlayers.length) {
-      handleByePlayer(sortedPlayers, paired, newMatches);
-    }
-    
+
     // 更新 matchesByRound，保留之前輪次的比賽記錄
     setMatchesByRound(prev => {
-      // 創建新的 matchesByRound 狀態，只保留不大於當前輪次的輪次資料
-      const updatedMatchesByRound = {};
-      
-      // 複製之前的輪次資料
-      Object.keys(prev).forEach(round => {
-        const roundNum = parseInt(round, 10);
-        if (roundNum <= currentRound) {
-          updatedMatchesByRound[roundNum] = roundNum === currentRound ? newMatches : prev[roundNum];
+      const updated = {};
+      Object.keys(prev).forEach(r => {
+        const rn = parseInt(r, 10);
+        if (rn <= currentRound) {
+          updated[rn] = rn === currentRound ? newMatches : prev[rn];
         }
       });
-      
-      // 確保當前輪次存在
-      if (!updatedMatchesByRound[currentRound]) {
-        updatedMatchesByRound[currentRound] = newMatches;
-      }
-      
-      return updatedMatchesByRound;
+      if (!updated[currentRound]) updated[currentRound] = newMatches;
+      return updated;
     });
-    
-    // 更新當前顯示的桌次
+
     setMatches(newMatches);
     message.success('第 ' + currentRound + ' 輪配對完成！');
   };
@@ -939,12 +1072,8 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
           
           // 查找直接對戰結果
           const matchup = player.rounds.find(round => round.opponent === opponent.number);
-          if (matchup) {
-            if (matchup.score > (winPoint / 2)) {
-              directMatchupScore += 1; // 勝利
-            } else if (matchup.score < (winPoint / 2)) {
-              directMatchupScore -= 1; // 失敗
-            }
+          if (matchup && matchup.score !== null && matchup.score !== undefined) {
+            directMatchupScore += matchup.score - (winPoint / 2);
           }
         }
         
@@ -1071,7 +1200,9 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
 
     // 在計算完分數後，啟用「抓對」按鈕
     setIsPairingButtonDisabled(false);
-    
+    // 將此輪加入鎖定清單
+    setScoredRounds(prev => prev.includes(currentRound) ? prev : [...prev, currentRound]);
+
     setPlayers(playersWithAuxScores);
     message.success('得分計算完成！');
   };
@@ -1711,10 +1842,15 @@ const handleFileUpload = (event) => {
   };
 
   // 紀錄比賽結果
-  const recordResult = (matchIndex, winnerNumber) => {
-    const newMatches = [...matches];
-    const match = newMatches[matchIndex];
-    
+  const recordResult = (matchIndex, winnerNumber, roundNum = currentRound) => {
+    // 鎖定防呆：已算分的輪次不允許修改
+    if (scoredRounds.includes(roundNum)) return;
+
+    // 從正確輪次取得比賽資料（修復原本永遠修改 matches 的 bug）
+    const roundMatchesCopy = [...(matchesByRound[roundNum] || [])];
+    const match = { ...roundMatchesCopy[matchIndex] };
+    if (!match) return;
+
     // 如果是輪空場次，自動設置player1為勝方
     if (match.player2 === 0) {
       match.player1Score = winPoint;
@@ -1725,18 +1861,18 @@ const handleFileUpload = (event) => {
     } else if (match.player2 === winnerNumber) {
       match.player1Score = 0;
     }
-    
-    setMatches(newMatches);
-    
-    // 更新matchesByRound中的對應比賽記錄
-    const roundMatches = [...matchesByRound[match.round]];
-    const roundMatchIndex = roundMatches.findIndex(m => m.table === match.table);
-    if (roundMatchIndex !== -1) {
-      roundMatches[roundMatchIndex] = match;
-      setMatchesByRound(prev => ({
-        ...prev,
-        [match.round]: roundMatches
-      }));
+
+    roundMatchesCopy[matchIndex] = match;
+
+    // 更新 matchesByRound
+    setMatchesByRound(prev => ({
+      ...prev,
+      [roundNum]: roundMatchesCopy
+    }));
+
+    // 若修改的是當前輪次，同步更新 matches state
+    if (roundNum === currentRound) {
+      setMatches(roundMatchesCopy);
     }
   };
 
@@ -1775,22 +1911,58 @@ const handleFileUpload = (event) => {
     setSelectedRound(1);
     // 重設抓對按鈕狀態
     setIsPairingButtonDisabled(false);
-    
+    // 清除鎖定輪次清單
+    setScoredRounds([]);
+
     // 清除 localStorage 中保存的狀態
     localStorage.removeItem('tournamentManagerState');
     
     message.success('系統已重設！');
   };
 
+  // 解除輪次鎖定，允許重新登錄結果並算分
+  const unlockRound = (round: number) => {
+    if (!window.confirm(`確定要解除第 ${round} 輪的鎖定嗎？\n解除後可重新修改結果，再按「算分」重新計算。`)) return;
+    setScoredRounds(prev => prev.filter(r => r !== round));
+    setCurrentRound(round);
+    setSelectedRound(round);
+    setMatches(matchesByRound[round] || []);
+    setIsPairingButtonDisabled(true); // 禁止重新抓對，直到重新算分
+  };
+
   // 生成桌次表
   const generateTableView = (matchesForRound = matches, round = currentRound) => {
+    const isRoundLocked = scoredRounds.includes(round);
+
+    const roundStatusBadge = isRoundLocked
+      ? <span className="ml-2 px-2 py-0.5 bg-gray-500 text-white text-xs rounded-full align-middle">已完成</span>
+      : round === currentRound
+        ? <span className="ml-2 px-2 py-0.5 bg-green-500 text-white text-xs rounded-full align-middle">進行中</span>
+        : null;
+
     return (
       <div className="p-4">
-        <h2 className="text-xl font-bold mb-4">第 {round} 輪桌次表</h2>
+        <h2 className="text-xl font-bold mb-2">
+          第 {round} 輪桌次表 {roundStatusBadge}
+        </h2>
+
+        {isRoundLocked && (
+          <div className="mb-3 px-3 py-2 bg-gray-100 border border-gray-300 rounded text-gray-600 text-sm flex items-center gap-2">
+            <span>🔒</span>
+            <span className="flex-1">此輪已完成算分，結果已鎖定，無法更改。</span>
+            <button
+              onClick={() => unlockRound(round)}
+              className="px-2 py-0.5 text-xs bg-white border border-gray-400 text-gray-600 hover:bg-amber-50 hover:border-amber-400 hover:text-amber-700 rounded transition-colors"
+            >
+              🔓 解除鎖定
+            </button>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full border-collapse border">
             <thead>
-              <tr className="bg-gray-200">
+              <tr className={isRoundLocked ? "bg-gray-300" : "bg-gray-200"}>
                 <th className="border p-2">桌號</th>
                 <th className="border p-2">黑方</th>
                 <th className="border p-2">白方</th>
@@ -1799,47 +1971,77 @@ const handleFileUpload = (event) => {
             </thead>
             <tbody>
               {matchesForRound.map((match, index) => (
-                <tr key={index} className="hover:bg-blue-100">
-                  <td className="border p-2 text-center">{match.table}</td>
-                  <td className="border p-2">
-                    {match.player1IsBlack 
-                      ? getPlayerName(match.player1) 
+                <tr key={index} className={isRoundLocked ? "bg-gray-50" : "hover:bg-blue-100"}>
+                  <td className="border p-2 text-center text-gray-500">{match.table}</td>
+                  <td className={`border p-2 ${isRoundLocked ? 'text-gray-500' : ''}`}>
+                    {match.player1IsBlack
+                      ? getPlayerName(match.player1)
                       : match.player2 === 0 ? '輪空' : getPlayerName(match.player2)}
                   </td>
-                  <td className="border p-2">
-                    {!match.player1IsBlack 
-                      ? getPlayerName(match.player1) 
+                  <td className={`border p-2 ${isRoundLocked ? 'text-gray-500' : ''}`}>
+                    {!match.player1IsBlack
+                      ? getPlayerName(match.player1)
                       : match.player2 === 0 ? '輪空' : getPlayerName(match.player2)}
                   </td>
                   <td className="border p-2 text-center">
-                    {match.player2 !== 0 ? (
-                      <div className="flex flex-col items-center">
-                        <div className="flex justify-center space-x-2">
-                          <Button 
-                            size="small"
-                            onClick={() => recordResult(index, match.player1)}
-                            type={match.player1Score === winPoint ? 'primary' : 'default'}
-                          >
-                            {getPlayerName(match.player1)} 勝
-                          </Button>
-                          <Button 
-                            size="small"
-                            onClick={() => recordResult(index, match.player2)}
-                            type={match.player1Score === 0 ? 'primary' : 'default'}
-                          >
-                            {getPlayerName(match.player2)} 勝
-                          </Button>
-                        </div>
+                    {isRoundLocked ? (
+                      // 鎖定狀態：用標籤顯示勝負，勝方深灰+勾，敗方淡灰
+                      <div className="flex justify-center space-x-2">
+                        {match.player2 !== 0 ? (
+                          <>
+                            <span className={`px-2 py-1 rounded text-sm ${
+                              match.player1Score === winPoint
+                                ? 'bg-gray-600 text-white font-semibold'
+                                : 'bg-gray-200 text-gray-400 line-through'
+                            }`}>
+                              {match.player1Score === winPoint ? '✓ ' : ''}{getPlayerName(match.player1)} 勝
+                            </span>
+                            <span className={`px-2 py-1 rounded text-sm ${
+                              match.player1Score === 0
+                                ? 'bg-gray-600 text-white font-semibold'
+                                : 'bg-gray-200 text-gray-400 line-through'
+                            }`}>
+                              {match.player1Score === 0 ? '✓ ' : ''}{getPlayerName(match.player2)} 勝
+                            </span>
+                          </>
+                        ) : (
+                          <span className="px-2 py-1 rounded text-sm bg-gray-600 text-white font-semibold">
+                            ✓ {getPlayerName(match.player1)} 輪空勝
+                          </span>
+                        )}
+                        {match.player1Score === undefined && match.player2 !== 0 && (
+                          <span className="px-2 py-1 text-sm text-orange-500">⚠ 未登錄</span>
+                        )}
                       </div>
                     ) : (
+                      // 進行中：互動按鈕
                       <div className="flex flex-col items-center">
-                        <Button 
-                          size="small"
-                          onClick={() => recordResult(index, match.player1)}
-                          type="primary"
-                        >
-                          {getPlayerName(match.player1)} 輪空勝
-                        </Button>
+                        {match.player2 !== 0 ? (
+                          <div className="flex justify-center space-x-2">
+                            <Button
+                              size="small"
+                              onClick={() => recordResult(index, match.player1, round)}
+                              type={match.player1Score === winPoint ? 'primary' : 'default'}
+                            >
+                              {getPlayerName(match.player1)} 勝
+                            </Button>
+                            <Button
+                              size="small"
+                              onClick={() => recordResult(index, match.player2, round)}
+                              type={match.player1Score === 0 ? 'primary' : 'default'}
+                            >
+                              {getPlayerName(match.player2)} 勝
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            size="small"
+                            onClick={() => recordResult(index, match.player1, round)}
+                            type="primary"
+                          >
+                            {getPlayerName(match.player1)} 輪空勝
+                          </Button>
+                        )}
                       </div>
                     )}
                   </td>
@@ -1943,32 +2145,44 @@ const handleFileUpload = (event) => {
   // 渲染分割視窗中的右側面板（桌次選擇器和桌次表）
   const renderRightPane = () => {
     const roundOptions = Object.keys(matchesByRound).map(round => parseInt(round, 10)).sort((a, b) => a - b);
-    
+
     return (
-      <div className="p-4">
+      <div className="p-2">
         {roundOptions.length > 0 ? (
           <>
-            <div className="mb-4 flex items-center justify-between">
-              <div className="font-bold">桌次表</div>
-              <div className="flex items-center">
-                <div className="mr-2">選擇輪次：</div>
-                <Select 
-                  value={selectedRound} 
-                  onChange={setSelectedRound} 
-                  style={{ width: '100px' }}
+            <div className="mb-3 flex items-center justify-between">
+              <div className="font-bold text-sm text-gray-700">桌次表</div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">輪次：</span>
+                <select
+                  value={selectedRound}
+                  onChange={(e) => setSelectedRound(parseInt(e.target.value, 10))}
+                  className="p-1 border rounded text-sm"
+                  style={{ width: '130px' }}
                 >
-                  {roundOptions.map(round => (
-                    <Option key={round} value={round}>第 {round} 輪</Option>
-                  ))}
-                </Select>
+                  {roundOptions.map(round => {
+                    const isScored = scoredRounds.includes(round);
+                    const isCurrent = round === currentRound;
+                    const label = isScored
+                      ? `第 ${round} 輪 ✓`
+                      : isCurrent
+                        ? `第 ${round} 輪 ▶`
+                        : `第 ${round} 輪`;
+                    return (
+                      <option key={round} value={round}>{label}</option>
+                    );
+                  })}
+                </select>
               </div>
             </div>
             {generateTableView(matchesByRound[selectedRound], selectedRound)}
           </>
         ) : (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center p-8 text-gray-500">
-              尚未生成任何輪次的桌次表。請點擊「抓對」按鈕生成桌次表。
+          <div className="flex items-center justify-center h-full min-h-32">
+            <div className="text-center p-8 text-gray-400">
+              <div className="text-4xl mb-3">📋</div>
+              <div className="text-sm">尚未生成桌次表</div>
+              <div className="text-xs mt-1">請設定當前輪次後點擊「抓對」</div>
             </div>
           </div>
         )}
@@ -1989,185 +2203,186 @@ const handleFileUpload = (event) => {
   return (
     <div className="p-2 max-w-full h-screen flex flex-col">
       <Card className="mb-2 py-1">
+        {/* 標題列 */}
         <div className="flex justify-between items-center mb-1">
           <div className="flex items-center gap-2">
             <Title level={3} className="mb-0">WGP比賽管理系統</Title>
-            <Button 
-              size="small"
+            <button
               onClick={() => setShowAuxScoreHelp(true)}
-              className="bg-blue-100 text-blue-700 hover:bg-blue-200"
+              className="px-2 py-0.5 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-200"
             >
               輔分說明
-            </Button>
+            </button>
+            <button
+              onClick={() => setShowAboutInfo(true)}
+              className="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300"
+            >
+              關於
+            </button>
           </div>
-          <span className="text-xs text-gray-500">系統會自動保存狀態</span>
+          <span className="text-xs text-gray-400">💾 系統會自動保存狀態</span>
         </div>
         <Divider className="my-1" />
-        
-        <Row gutter={16} className="mb-1">
-          <Col span={4}>
-            <div className="flex items-center gap-2">
-              <span className="text-sm whitespace-nowrap">賽制:</span>
-              <Select 
-                value={gameType} 
-                onChange={setGameType} 
-                style={{ width: '100%' }}
+
+        {/* 賽事設定列 */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mb-1 items-center">
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-500 whitespace-nowrap">賽制</span>
+            <span className="text-xs font-medium text-gray-700 px-2 py-1 bg-gray-100 rounded border border-gray-200">瑞士制</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-500 whitespace-nowrap">比賽項目</span>
+            <Select value={gameTitle} onChange={setGameTitle} style={{ width: '110px' }}>
+              <Option value="WGP">WGP GiveMe5</Option>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-500 whitespace-nowrap">參賽隊伍</span>
+            <InputNumber min={2} value={allPlayers} onChange={setAllPlayers} style={{ width: '60px' }} />
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-500 whitespace-nowrap">輪數</span>
+            <InputNumber min={1} value={rounds} onChange={setRounds} style={{ width: '55px' }} />
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-500 whitespace-nowrap">勝方得分</span>
+            <InputNumber min={1} value={winPoint} onChange={setWinPoint} style={{ width: '55px' }} />
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-500 whitespace-nowrap">當前輪次</span>
+            <InputNumber min={1} max={rounds} value={currentRound} onChange={setCurrentRound} style={{ width: '55px' }} />
+          </div>
+          {/* 輪次進度小標籤 */}
+          <div className="flex items-center gap-1 ml-2">
+            {Array.from({ length: rounds }, (_, i) => i + 1).map(r => (
+              <span
+                key={r}
+                className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold border ${
+                  scoredRounds.includes(r)
+                    ? 'bg-gray-500 text-white border-gray-500'
+                    : r === currentRound
+                      ? 'bg-blue-500 text-white border-blue-500'
+                      : 'bg-white text-gray-400 border-gray-300'
+                }`}
+                title={scoredRounds.includes(r) ? `第${r}輪 已完成` : r === currentRound ? `第${r}輪 進行中` : `第${r}輪 未開始`}
               >
-                <Option value="瑞士制">瑞士制</Option>
-                <Option value="單循環">單循環</Option>
-              </Select>
+                {scoredRounds.includes(r) ? '✓' : r}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* 次要操作按鈕（設定列正下方） */}
+        <div className="flex flex-wrap gap-1.5 items-center mb-1">
+          <button
+            onClick={resetSystem}
+            className="px-3 py-1 rounded text-xs bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
+          >
+            ♻ 重設
+          </button>
+          <label className="px-3 py-1 rounded text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 cursor-pointer">
+            📥 上傳隊伍表
+            <input type="file" className="hidden" onChange={handleFileUpload} accept=".xlsx,.xls" />
+          </label>
+          <button
+            onClick={exportPlayersToExcel}
+            className="px-3 py-1 rounded text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+          >
+            📤 下載選手成績
+          </button>
+          <button
+            onClick={exportMatchesToExcel}
+            className="px-3 py-1 rounded text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+          >
+            📤 下載桌次表
+          </button>
+          <label className="px-3 py-1 rounded text-xs bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 cursor-pointer">
+            📂 上傳狀態
+            <input type="file" className="hidden" onChange={importStateFromJSON} accept=".json" />
+          </label>
+          <button
+            onClick={exportStateToJSON}
+            className="px-3 py-1 rounded text-xs bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200"
+          >
+            💾 下載狀態
+          </button>
+        </div>
+
+        <Divider className="my-1" />
+
+        {/* 流程引導提示 */}
+        {(() => {
+          const existingRounds = Object.keys(matchesByRound).map(r => parseInt(r, 10));
+          const isCurrentScored = scoredRounds.includes(currentRound);
+          const isCurrentPaired = existingRounds.includes(currentRound);
+          const allDone = scoredRounds.length >= rounds;
+
+          let msg = '';
+          let style = 'bg-blue-50 border-blue-200 text-blue-800';
+          if (allDone) {
+            msg = `🏆 所有 ${rounds} 輪賽事均已完成！可下載最終成績。`;
+            style = 'bg-green-50 border-green-300 text-green-800';
+          } else if (isCurrentScored) {
+            msg = `✅ 第 ${currentRound} 輪已完成。請將「當前輪次」改為 ${currentRound + 1}，然後點擊「抓對」。`;
+            style = 'bg-green-50 border-green-300 text-green-800';
+          } else if (isPairingButtonDisabled) {
+            msg = `▶ 第 ${currentRound} 輪桌次已生成。請在右側登錄各場結果，完成後點擊「算分」。`;
+            style = 'bg-amber-50 border-amber-300 text-amber-800';
+          } else if (isCurrentPaired) {
+            msg = `⚠ 第 ${currentRound} 輪已有桌次但尚未算分，請確認所有結果後點擊「算分」。`;
+            style = 'bg-orange-50 border-orange-300 text-orange-800';
+          } else {
+            msg = `➡ 準備第 ${currentRound} 輪：${currentRound === 1 ? '可先「抽籤」調整籤號順序，再' : ''}點擊「抓對」生成本輪桌次。`;
+          }
+          return (
+            <div className={`px-3 py-1.5 mb-1.5 rounded border text-sm ${style}`}>
+              {msg}
             </div>
-          </Col>
-          
-          <Col span={4}>
-            <div className="flex items-center gap-2">
-              <span className="text-sm whitespace-nowrap">比賽項目:</span>
-              <Select 
-                value={gameTitle} 
-                onChange={setGameTitle} 
-                style={{ width: '100%' }}
-              >
-                <Option value="WGP">WGP GiveMe5</Option>
-              </Select>
-            </div>
-          </Col>
-          
-          <Col span={4}>
-            <div className="flex items-center gap-2">
-              <span className="text-sm whitespace-nowrap">參賽隊伍數:</span>
-              <InputNumber 
-                min={2} 
-                value={allPlayers} 
-                onChange={setAllPlayers} 
-                style={{ width: '100%' }}
-              />
-            </div>
-          </Col>
-          
-          <Col span={4}>
-            <div className="flex items-center gap-2">
-              <span className="text-sm whitespace-nowrap">比賽輪數:</span>
-              <InputNumber 
-                min={1} 
-                value={rounds} 
-                onChange={setRounds} 
-                style={{ width: '100%' }}
-              />
-            </div>
-          </Col>
-          
-          <Col span={4}>
-            <div className="flex items-center gap-2">
-              <span className="text-sm whitespace-nowrap">勝方得分:</span>
-              <InputNumber 
-                min={1} 
-                value={winPoint} 
-                onChange={setWinPoint} 
-                style={{ width: '100%' }}
-              />
-            </div>
-          </Col>
-          
-          <Col span={4}>
-            <div className="flex items-center gap-2">
-              <span className="text-sm whitespace-nowrap">當前輪次:</span>
-              <InputNumber 
-                min={1} 
-                max={rounds} 
-                value={currentRound} 
-                onChange={setCurrentRound} 
-                style={{ width: '100%' }}
-              />
-            </div>
-          </Col>
-        </Row>
-        
-        <Row gutter={16}>
-          <Col span={6}>
-            <Button onClick={handleDrawLots} type="primary" block>
-              抽籤
-            </Button>
-          </Col>
-          <Col span={6}>
-            <Button 
-              onClick={generatePairings} 
-              type="primary" 
-              block
-              disabled={isPairingButtonDisabled}
-            >
-              抓對
-            </Button>
-          </Col>
-          <Col span={6}>
-            <Button onClick={calculateScores} type="primary" block>
-              算分
-            </Button>
-          </Col>
-          <Col span={6}>
-            <Button onClick={toggleSortOrder} type="primary" block>
-              {sortByRank ? '籤號排序' : '名次排序'}
-            </Button>
-          </Col>
-        </Row>
-        
-        <Row gutter={16} className="mt-2">
-          <Col span={4}>
-            <Button onClick={resetSystem} className="bg-red-100 text-red-700 hover:bg-red-200" block>
-              重設
-            </Button>
-          </Col>
-          <Col span={4}>
-            <div>
-              <input
-                type="file"
-                id="fileUpload"
-                style={{ display: 'none' }}
-                onChange={handleFileUpload}
-                accept=".xlsx,.xls"
-              />
-              <Button
-                onClick={() => document.getElementById('fileUpload').click()}
-                className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                block
-              >
-                上傳隊伍表
-              </Button>
-            </div>
-          </Col>
-          <Col span={4}>
-            <Button onClick={exportPlayersToExcel} className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200" block>
-              下載選手成績
-            </Button>
-          </Col>
-          <Col span={4}>
-            <Button onClick={exportMatchesToExcel} className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200" block>
-              下載桌次表
-            </Button>
-          </Col>
-          <Col span={4}>
-            <div>
-              <input
-                type="file"
-                id="stateFileImport"
-                style={{ display: 'none' }}
-                onChange={importStateFromJSON}
-                accept=".json"
-              />
-              <Button
-                onClick={() => document.getElementById('stateFileImport').click()}
-                className="bg-sky-100 text-sky-700 hover:bg-sky-200"
-                block
-              >
-                上傳狀態
-              </Button>
-            </div>
-          </Col>
-          <Col span={4}>
-            <Button onClick={exportStateToJSON} className="bg-sky-100 text-sky-700 hover:bg-sky-200" block>
-              下載目前狀態
-            </Button>
-          </Col>
-        </Row>
+          );
+        })()}
+
+        {/* 主要操作按鈕（單行，說明文字行內顯示） */}
+        <div className="flex gap-2">
+          <button
+            onClick={handleDrawLots}
+            className="flex-1 px-3 py-1.5 rounded font-medium text-sm bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 flex items-center justify-center gap-1.5"
+          >
+            <span>🎲 抽籤</span>
+            <span className="text-xs font-normal text-indigo-400">重排籤號</span>
+          </button>
+          <button
+            onClick={generatePairings}
+            disabled={isPairingButtonDisabled}
+            className={`flex-1 px-3 py-1.5 rounded font-medium text-sm flex items-center justify-center gap-1.5 transition-colors ${
+              isPairingButtonDisabled
+                ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+                : 'bg-blue-500 text-white hover:bg-blue-600 border border-blue-500 shadow-sm'
+            }`}
+          >
+            <span>🔀 抓對</span>
+            <span className={`text-xs font-normal ${isPairingButtonDisabled ? 'text-gray-400' : 'text-blue-200'}`}>
+              {isPairingButtonDisabled ? '請先算分' : '生成桌次'}
+            </span>
+          </button>
+          <button
+            onClick={calculateScores}
+            className={`flex-1 px-3 py-1.5 rounded font-medium text-sm flex items-center justify-center gap-1.5 transition-colors ${
+              isPairingButtonDisabled
+                ? 'bg-green-500 text-white hover:bg-green-600 border border-green-500 shadow-sm'
+                : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'
+            }`}
+          >
+            <span>🧮 算分</span>
+            <span className={`text-xs font-normal ${isPairingButtonDisabled ? 'text-green-100' : 'text-green-400'}`}>計算本輪</span>
+          </button>
+          <button
+            onClick={toggleSortOrder}
+            className="flex-1 px-3 py-1.5 rounded font-medium text-sm bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 flex items-center justify-center gap-1.5"
+          >
+            <span>📊 {sortByRank ? '籤號排序' : '名次排序'}</span>
+            <span className="text-xs font-normal text-purple-400">切換左側</span>
+          </button>
+        </div>
       </Card>
       
       {/* 分割視窗 */}
@@ -2201,6 +2416,51 @@ const handleFileUpload = (event) => {
         </div>
       </div>
       
+      {/* 關於彈窗 */}
+      {showAboutInfo && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <Title level={4} className="mb-0">關於本系統</Title>
+              <button
+                onClick={() => setShowAboutInfo(false)}
+                className="text-gray-500 hover:text-gray-700 text-xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <p><strong>WGP 比賽管理系統</strong> <span className="text-gray-400 font-normal">v{packageInfo.version}</span></p>
+              <p className="text-gray-600">瑞士制對戰配對與積分管理工具，專為 WGP GiveMe5 桌遊賽事設計。</p>
+              <div>
+                <p className="text-gray-500 mb-1">開發者</p>
+                <p>Rita Weng</p>
+                <a
+                  href="mailto:rita6656@gmail.com"
+                  className="text-blue-600 hover:underline"
+                >
+                  rita6656@gmail.com
+                </a>
+              </div>
+              <div>
+                <p className="text-gray-500 mb-1">GitHub 專案</p>
+                <a
+                  href="https://github.com/RitaWeng/wgp-tournament-manager"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline break-all"
+                >
+                  github.com/RitaWeng/wgp-tournament-manager
+                </a>
+              </div>
+            </div>
+            <div className="mt-6 text-right">
+              <Button onClick={() => setShowAboutInfo(false)} type="primary">關閉</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 輔分說明彈窗 */}
       {showAuxScoreHelp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -2214,10 +2474,13 @@ const handleFileUpload = (event) => {
                 ×
               </button>
             </div>
-            <div className="space-y-3">
-              <p><strong>輔分一</strong>：所遇對手之總分和。隊伍遇到的所有對手總分加總。</p>
-              <p><strong>輔分二</strong>：所負對手之總分和。隊伍輸掉的比賽中，對手的總分加總。</p>
-              <p><strong>輔分三</strong>：如曾對戰過，彼此交戰之勝負(勝方+1)。</p>
+            <div className="space-y-3 text-sm">
+              <p className="text-gray-500">排名依以下順序依序比較：</p>
+              <p><strong>總分</strong>：每輪勝者獲得勝方得分，敗者得 0 分，輪空獲得勝方得分。</p>
+              <p><strong>輔分一</strong>：所遇對手之總分和。所有對手（不含輪空）的最終總分加總，數值越高代表遇到的對手整體實力越強。</p>
+              <p><strong>輔分二</strong>：所負對手之總分和。僅計算落敗場次中對手的最終總分加總。</p>
+              <p><strong>輔分三</strong>：直接對戰結果。僅在總分、輔分一、輔分二三項均相同時啟用，計算與同分組選手之間的直接對戰得失分。</p>
+              <p className="text-gray-400 text-xs">* 輪空場次不計入輔分計算。</p>
             </div>
             <div className="mt-6 text-right">
               <Button 
