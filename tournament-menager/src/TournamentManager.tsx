@@ -231,6 +231,8 @@ const TournamentManager = () => {
   const [currentRound, setCurrentRound] = useState(1);
   const [gameTitle, setGameTitle] = useState('WGP GiveMe5');
   const [editMode, setEditMode] = useState(false);
+  // 修改配對驗證結果 {round, errors}
+  const [pairingValidation, setPairingValidation] = useState<{round: number, errors: string[]} | null>(null);
   // 新增狀態用於控制「抓對」按鈕是否可用
   const [isPairingButtonDisabled, setIsPairingButtonDisabled] = useState(false);
   // 記錄哪些輪次已完成算分（鎖定）
@@ -1089,6 +1091,23 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
 
   // 計算得分
   const calculateScores = () => {
+    // 算分前先驗證配對：hardErrors 必擋；softErrors 彈 confirm 可覆寫
+    const { hardErrors, softErrors } = getPairingIssues(currentRound);
+    if (hardErrors.length > 0) {
+      setPairingValidation({ round: currentRound, errors: [...hardErrors, ...softErrors] });
+      return;
+    }
+    if (softErrors.length > 0) {
+      const ok = window.confirm(
+        `偵測到下列重複對戰：\n\n${softErrors.join('\n')}\n\n仍要算分嗎？`
+      );
+      if (!ok) {
+        setPairingValidation({ round: currentRound, errors: softErrors });
+        return;
+      }
+      setPairingValidation(null);
+    }
+
     // 深拷貝玩家數據
     const updatedPlayers = JSON.parse(JSON.stringify(players));
     
@@ -1932,6 +1951,81 @@ const handleFileUpload = (event) => {
     setIsPairingButtonDisabled(true); // 禁止重新抓對，直到重新算分
   };
 
+  // 直接修改某桌某方的選手
+  const applyPairingEdit = (matchIndex: number, isBlackSide: boolean, newPlayerNum: number, round: number) => {
+    if (scoredRounds.includes(round)) return;
+
+    const roundMatches = [...(matchesByRound[round] || [])];
+    const match = { ...roundMatches[matchIndex] };
+
+    // 依黑白方決定要更新 player1 還是 player2
+    if (isBlackSide) {
+      if (match.player1IsBlack) match.player1 = newPlayerNum;
+      else match.player2 = newPlayerNum;
+    } else {
+      if (match.player1IsBlack) match.player2 = newPlayerNum;
+      else match.player1 = newPlayerNum;
+    }
+
+    // 清除舊結果（對手已變，舊結果無效）
+    delete match.player1Score;
+
+    roundMatches[matchIndex] = match;
+    setMatchesByRound(prev => ({ ...prev, [round]: roundMatches }));
+    if (round === currentRound) setMatches(roundMatches);
+    // 清除上一次的驗證結果
+    setPairingValidation(null);
+  };
+
+  // 取得本輪配對的錯誤分類（hard=必擋，soft=可覆寫）
+  const getPairingIssues = (round: number): { hardErrors: string[], softErrors: string[] } => {
+    const roundMatches = matchesByRound[round] || [];
+    const hardErrors: string[] = [];
+    const softErrors: string[] = [];
+
+    // 收集本輪所有出場選手
+    const appearing: number[] = [];
+    roundMatches.forEach(m => {
+      if (m.player1) appearing.push(m.player1);
+      if (m.player2 && m.player2 !== 0) appearing.push(m.player2);
+    });
+
+    // 檢查1（hard）：同一選手重複出現
+    const seen = new Set<number>();
+    appearing.forEach(n => {
+      if (seen.has(n)) hardErrors.push(`⚠ 選手 ${getPlayerName(n)} 在本輪重複出現`);
+      seen.add(n);
+    });
+
+    // 檢查2（hard）：有選手未排入本輪
+    players.forEach(p => {
+      if (!appearing.includes(p.number)) {
+        hardErrors.push(`⚠ 選手 ${getPlayerName(p.number)} 未排入本輪配對`);
+      }
+    });
+
+    // 檢查3（soft）：重複對戰（已在前幾輪交手過），瑞士制末輪可能避不掉，允許覆寫
+    roundMatches.forEach(m => {
+      if (m.player2 === 0) return;
+      const p1 = players.find(p => p.number === m.player1);
+      if (!p1) return;
+      const alreadyPlayed = p1.rounds
+        .slice(0, round - 1)
+        .some(r => r.opponent === m.player2 && r.score !== null);
+      if (alreadyPlayed) {
+        softErrors.push(`⚠ ${getPlayerName(m.player1)} 與 ${getPlayerName(m.player2)} 已在先前對戰過`);
+      }
+    });
+
+    return { hardErrors, softErrors };
+  };
+
+  // 驗證本輪配對是否合法（給「🔍 驗證配對」按鈕用）
+  const validatePairings = (round: number) => {
+    const { hardErrors, softErrors } = getPairingIssues(round);
+    setPairingValidation({ round, errors: [...hardErrors, ...softErrors] });
+  };
+
   // 生成桌次表
   const generateTableView = (matchesForRound = matches, round = currentRound) => {
     const isRoundLocked = scoredRounds.includes(round);
@@ -1944,9 +2038,19 @@ const handleFileUpload = (event) => {
 
     return (
       <div className="p-4">
-        <h2 className="text-xl font-bold mb-2">
-          第 {round} 輪桌次表 {roundStatusBadge}
-        </h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-xl font-bold">
+            第 {round} 輪桌次表 {roundStatusBadge}
+          </h2>
+          {!isRoundLocked && (
+            <button
+              onClick={() => validatePairings(round)}
+              className="px-3 py-1 text-sm bg-blue-50 border border-blue-400 text-blue-700 hover:bg-blue-100 rounded"
+            >
+              🔍 驗證配對
+            </button>
+          )}
+        </div>
 
         {isRoundLocked && (
           <div className="mb-3 px-3 py-2 bg-gray-100 border border-gray-300 rounded text-gray-600 text-sm flex items-center gap-2">
@@ -1961,6 +2065,20 @@ const handleFileUpload = (event) => {
           </div>
         )}
 
+        {pairingValidation && pairingValidation.round === round && (
+          <div className={`mb-3 px-3 py-2 rounded text-sm border ${pairingValidation.errors.length === 0 ? 'bg-green-50 border-green-400 text-green-800' : 'bg-red-50 border-red-400 text-red-800'}`}>
+            {pairingValidation.errors.length === 0 ? (
+              <span>✅ 配對無誤，可以開始比賽。</span>
+            ) : (
+              <div>
+                <div className="font-semibold mb-1">發現以下問題，請修正後再次驗證：</div>
+                {pairingValidation.errors.map((e, i) => <div key={i}>{e}</div>)}
+              </div>
+            )}
+            <button onClick={() => setPairingValidation(null)} className="mt-1 text-xs underline opacity-60">關閉</button>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full border-collapse border">
             <thead>
@@ -1972,18 +2090,45 @@ const handleFileUpload = (event) => {
               </tr>
             </thead>
             <tbody>
-              {matchesForRound.map((match, index) => (
-                <tr key={index} className={isRoundLocked ? "bg-gray-50" : "hover:bg-blue-100"}>
+              {matchesForRound.map((match, index) => {
+                const blackPlayerNum = match.player1IsBlack ? match.player1 : match.player2;
+                const whitePlayerNum = match.player1IsBlack ? match.player2 : match.player1;
+                return (
+                <tr key={index} className={isRoundLocked ? "bg-gray-50" : "hover:bg-blue-50"}>
                   <td className="border p-2 text-center text-gray-500">{match.table}</td>
-                  <td className={`border p-2 ${isRoundLocked ? 'text-gray-500' : ''}`}>
-                    {match.player1IsBlack
-                      ? getPlayerName(match.player1)
-                      : match.player2 === 0 ? '輪空' : getPlayerName(match.player2)}
+                  <td className="border p-2">
+                    {isRoundLocked
+                      ? <span className="text-gray-500">{getPlayerName(blackPlayerNum)}</span>
+                      : (
+                        <select
+                          value={blackPlayerNum}
+                          onChange={e => applyPairingEdit(index, true, parseInt(e.target.value), round)}
+                          className="border rounded px-1 py-0.5 text-sm w-full"
+                        >
+                          {players.map(p => (
+                            <option key={p.number} value={p.number}>{p.number}. {p.name}</option>
+                          ))}
+                        </select>
+                      )
+                    }
                   </td>
-                  <td className={`border p-2 ${isRoundLocked ? 'text-gray-500' : ''}`}>
-                    {!match.player1IsBlack
-                      ? getPlayerName(match.player1)
-                      : match.player2 === 0 ? '輪空' : getPlayerName(match.player2)}
+                  <td className="border p-2">
+                    {match.player2 === 0
+                      ? <span className="text-gray-400 italic">（輪空）</span>
+                      : isRoundLocked
+                        ? <span className="text-gray-500">{getPlayerName(whitePlayerNum)}</span>
+                        : (
+                          <select
+                            value={whitePlayerNum}
+                            onChange={e => applyPairingEdit(index, false, parseInt(e.target.value), round)}
+                            className="border rounded px-1 py-0.5 text-sm w-full"
+                          >
+                            {players.map(p => (
+                              <option key={p.number} value={p.number}>{p.number}. {p.name}</option>
+                            ))}
+                          </select>
+                        )
+                    }
                   </td>
                   <td className="border p-2 text-center">
                     {isRoundLocked ? (
@@ -2048,7 +2193,8 @@ const handleFileUpload = (event) => {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
