@@ -2248,20 +2248,20 @@ const handleFileUpload = (event) => {
         </div>
         
         <div className="overflow-x-auto max-h-[calc(100vh-180px)]">
-          <table className="w-full border-collapse border table-fixed min-w-[420px]">
+          <table className="w-full border-separate border-spacing-0 border-t border-l table-fixed min-w-[420px]">
             <thead>
-              <tr className="bg-gray-200 sticky top-0">
-                <th className="border p-2 w-10 sticky left-0 bg-gray-200 z-30">籤號</th>
-                <th className="border p-2 w-32 sticky left-10 bg-gray-200 z-30">隊伍</th>
-                <th className="border p-2 w-12 sticky left-[168px] bg-yellow-100 z-30">名次</th>
-                <th className="border p-2 w-12 sticky left-[216px] bg-red-100 z-30">總分</th>
-                <th className="border p-2 w-12 sticky left-[264px] bg-green-100 z-30">輔分一</th>
-                <th className="border p-2 w-12 sticky left-[312px] bg-green-100 z-30">輔分二</th>
-                <th className="border p-2 w-12 sticky left-[360px] bg-green-100 z-30 shadow-[2px_0_0_0_#9ca3af]">輔分三</th>
+              <tr>
+                <th className="border-r border-b p-2 w-10 sticky top-0 left-0 bg-gray-200 z-30">籤號</th>
+                <th className="border-r border-b p-2 w-32 sticky top-0 left-10 bg-gray-200 z-30">隊伍</th>
+                <th className="border-r border-b p-2 w-12 sticky top-0 left-[168px] bg-yellow-100 z-30">名次</th>
+                <th className="border-r border-b p-2 w-12 sticky top-0 left-[216px] bg-red-100 z-30">總分</th>
+                <th className="border-r border-b p-2 w-12 sticky top-0 left-[264px] bg-green-100 z-30">輔分一</th>
+                <th className="border-r border-b p-2 w-12 sticky top-0 left-[312px] bg-green-100 z-30">輔分二</th>
+                <th className="border-r border-r-gray-400 border-b p-2 w-12 sticky top-0 left-[360px] bg-green-100 z-30">輔分三</th>
                 {Array.from({ length: rounds }).map((_, i) => (
                   <React.Fragment key={i}>
-                    <th className="border p-2 w-12 z-20">R{i + 1}</th>
-                    <th className="border p-2 w-24 z-20">R{i + 1}對手</th>
+                    <th className="border-r border-b p-2 w-12 sticky top-0 bg-gray-200 z-20">R{i + 1}</th>
+                    <th className="border-r border-b p-2 w-24 sticky top-0 bg-gray-200 z-20">R{i + 1}對手</th>
                   </React.Fragment>
                 ))}
               </tr>
@@ -2269,8 +2269,8 @@ const handleFileUpload = (event) => {
             <tbody>
               {sortedPlayers.map((player, index) => (
                 <tr key={index} className="group hover:bg-blue-100">
-                  <td className="border p-2 text-center sticky left-0 bg-white group-hover:bg-blue-100 z-10">{player.number}</td>
-                  <td className="border p-2 sticky left-10 bg-white group-hover:bg-blue-100 z-10">
+                  <td className="border-r border-b p-2 text-center sticky left-0 bg-white group-hover:bg-blue-100 z-10">{player.number}</td>
+                  <td className="border-r border-b p-2 sticky left-10 bg-white group-hover:bg-blue-100 z-10">
                     {editMode ? (
                       <input
                         type="text"
@@ -2282,19 +2282,19 @@ const handleFileUpload = (event) => {
                       player.name
                     )}
                   </td>
-                  <td className="border p-2 text-center sticky left-[168px] bg-white group-hover:bg-blue-100 z-10">{player.rank}</td>
-                  <td className="border p-2 text-center sticky left-[216px] bg-white group-hover:bg-blue-100 z-10">{player.totalScore}</td>
-                  <td className="border p-2 text-center sticky left-[264px] bg-white group-hover:bg-blue-100 z-10">{player.auxScore1}</td>
-                  <td className="border p-2 text-center sticky left-[312px] bg-white group-hover:bg-blue-100 z-10">{player.auxScore2}</td>
-                  <td className="border p-2 text-center sticky left-[360px] bg-white group-hover:bg-blue-100 z-10 shadow-[2px_0_0_0_#9ca3af]">{player.auxScore3}</td>
+                  <td className="border-r border-b p-2 text-center sticky left-[168px] bg-white group-hover:bg-blue-100 z-10">{player.rank}</td>
+                  <td className="border-r border-b p-2 text-center sticky left-[216px] bg-white group-hover:bg-blue-100 z-10">{player.totalScore}</td>
+                  <td className="border-r border-b p-2 text-center sticky left-[264px] bg-white group-hover:bg-blue-100 z-10">{player.auxScore1}</td>
+                  <td className="border-r border-b p-2 text-center sticky left-[312px] bg-white group-hover:bg-blue-100 z-10">{player.auxScore2}</td>
+                  <td className="border-r border-r-gray-400 border-b p-2 text-center sticky left-[360px] bg-white group-hover:bg-blue-100 z-10">{player.auxScore3}</td>
                   {Array.from({ length: rounds }).map((_, i) => {
                     const round = player.rounds[i] || { score: null, opponent: null };
                     return (
                       <React.Fragment key={i}>
-                        <td className="border p-2 text-center">
+                        <td className="border-r border-b p-2 text-center">
                           {round.score !== null ? round.score : ''}
                         </td>
-                        <td className="border p-2 text-center">
+                        <td className="border-r border-b p-2 text-center">
                           {round.opponent ? getPlayerName(round.opponent) : ''}
                         </td>
                       </React.Fragment>
