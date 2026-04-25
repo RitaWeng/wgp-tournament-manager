@@ -80,6 +80,8 @@ npm install
 
 ### 啟動（網頁開發模式）
 
+- 本機測試須將 `webpack.config.js` 的 `publicPath: './'` 改為 `publicPath: '/'` 開啟localhost:3000 才能正常顯示
+
 ```bash
 npm start
 # 開啟 http://localhost:3000
