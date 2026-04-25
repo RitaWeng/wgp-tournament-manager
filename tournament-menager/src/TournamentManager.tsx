@@ -217,7 +217,7 @@ const message = {
 
 const TournamentManager = () => {
   // 狀態管理
-  const [allPlayers, setAllPlayers] = useState(32);
+  const [allPlayers, setAllPlayers] = useState(10);
   const [rounds, setRounds] = useState(5);
   const [gameType, setGameType] = useState('瑞士制');
   const [winPoint, setWinPoint] = useState(1);
@@ -318,8 +318,7 @@ const TournamentManager = () => {
       }
 
       console.log('成功加載狀態，最後保存於:', new Date(appState.lastSaved).toLocaleString());
-      message.success(`已恢復上次保存的狀態 (${new Date(appState.lastSaved).toLocaleString()})`);
-      
+
       return true;
     } catch (error) {
       console.error('加載狀態時發生錯誤:', error);
@@ -1637,20 +1636,18 @@ const handleFileUpload = (event) => {
         }
       }
       
-      // 更新選手資料
-      const updatedPlayers = [...players];
-      let updatedCount = 0;
+      // 解析所有列，收集成功項目，再統一決定隊伍總數
       let fieldErrors = [];
-      
-      console.log("開始更新選手資料...");
-      
+      const parsedRows = []; // 成功解析的列：{ number, name, country, level }
+
+      console.log("開始解析隊伍資料...");
+
       jsonData.forEach((row, rowIndex) => {
         // 獲取籤號，如果是字串，轉換為數字
         let numberValue = getValueByPossibleFieldNames(row, numberFieldNames);
-        
+
         // 如果找不到標準籤號欄位，嘗試使用任何數字欄位
         if (numberValue === null) {
-          // 尋找任何可能是數字的欄位
           for (const key in row) {
             const value = row[key];
             if (!isNaN(parseInt(value))) {
@@ -1659,22 +1656,18 @@ const handleFileUpload = (event) => {
             }
           }
         }
-        
+
         let number;
         if (numberValue !== null) {
-          // 如果是字串，移除非數字字元
           if (typeof numberValue === 'string') {
             numberValue = numberValue.replace(/[^0-9]/g, '');
           }
           number = parseInt(numberValue);
         }
-        
+
         // 獲取隊伍名稱
         let name = getValueByPossibleFieldNames(row, nameFieldNames);
-        
-        // 如果找不到標準隊伍欄位，嘗試使用任何字串欄位
         if (!name) {
-          // 尋找任何可能是字串的欄位
           for (const key in row) {
             const value = row[key];
             if (typeof value === 'string' && value.trim() !== '' && key !== possibleNumberField) {
@@ -1683,55 +1676,80 @@ const handleFileUpload = (event) => {
             }
           }
         }
-        
-        // 輸出除錯訊息
+
         console.log(`第 ${rowIndex + 1} 行解析結果: 籤號=${number}, 隊伍=${name}`);
-        
-        // 檢查是否缺少必要欄位
-        if (isNaN(number) || !name) {
-          fieldErrors.push(`第 ${rowIndex + 1} 行: ${isNaN(number) ? '缺少有效籤號' : ''} ${!name ? '缺少有效隊伍名稱' : ''}`);
-          return; // 跳過此行
+
+        if (isNaN(number) || number < 1 || !name) {
+          fieldErrors.push(`第 ${rowIndex + 1} 行: ${(isNaN(number) || number < 1) ? '缺少有效籤號' : ''} ${!name ? '缺少有效隊伍名稱' : ''}`);
+          return;
         }
-        
-        const playerIndex = updatedPlayers.findIndex(p => p.number === number);
-        if (playerIndex !== -1) {
-          updatedPlayers[playerIndex].name = name;
-          updatedCount++;
-          
-          // 如果有國家/城市資料，也可以一併更新
-          const country = getValueByPossibleFieldNames(row, countryFieldNames);
-          if (country) {
-            updatedPlayers[playerIndex].country = country;
-          }
-          
-          // 如果有段位資料，也可以一併更新
-          const level = getValueByPossibleFieldNames(row, levelFieldNames);
-          if (level) {
-            updatedPlayers[playerIndex].level = level;
-          }
-        } else {
-          fieldErrors.push(`第 ${rowIndex + 1} 行: 籤號 ${number} 不在系統中`);
-        }
+
+        const country = getValueByPossibleFieldNames(row, countryFieldNames);
+        const level = getValueByPossibleFieldNames(row, levelFieldNames);
+        parsedRows.push({ number, name, country, level });
       });
-      
-      console.log(`更新完成: 成功=${updatedCount}, 錯誤=${fieldErrors.length}`);
-      
-      if (updatedCount > 0) {
-        setPlayers(updatedPlayers);
-        let successMessage = `成功上傳籤號與隊伍對應表！已更新 ${updatedCount} 筆資料。`;
-        
-        // 如果有錯誤，但也有成功的更新，顯示組合訊息
+
+      const parsedCount = parsedRows.length;
+      console.log(`解析完成: 成功=${parsedCount}, 錯誤=${fieldErrors.length}`);
+
+      if (parsedCount > 0) {
+        // 以最大籤號決定隊伍總數
+        const newSize = Math.max(...parsedRows.map(r => r.number));
+        const sizeChanged = newSize !== allPlayers;
+
+        // 以新尺寸建立 players 陣列：保留現有資料，缺位補預設選手
+        const newPlayers = [];
+        for (let i = 1; i <= newSize; i++) {
+          const existing = players.find(p => p.number === i);
+          if (existing) {
+            newPlayers.push({ ...existing });
+          } else {
+            newPlayers.push({
+              number: i,
+              name: `隊伍${i}`,
+              level: '',
+              country: '',
+              totalScore: 0,
+              rank: i,
+              auxScore1: 0,
+              auxScore2: 0,
+              auxScore3: 0,
+              rounds: Array(rounds).fill().map(() => ({ score: null, opponent: null, isBlack: false }))
+            });
+          }
+        }
+
+        // 套用上傳的隊伍資料
+        parsedRows.forEach(({ number, name, country, level }) => {
+          const idx = newPlayers.findIndex(p => p.number === number);
+          if (idx !== -1) {
+            newPlayers[idx].name = name;
+            if (country) newPlayers[idx].country = country;
+            if (level) newPlayers[idx].level = level;
+          }
+        });
+
+        setPlayers(newPlayers);
+        if (sizeChanged) {
+          setAllPlayers(newSize);
+        }
+
+        let successMessage = `成功上傳籤號與隊伍對應表！已更新 ${parsedCount} 筆資料`;
+        if (sizeChanged) {
+          successMessage += `，參賽隊伍數已自動調整為 ${newSize}`;
+        }
+        successMessage += '。';
+
         if (fieldErrors.length > 0) {
           const errorCount = fieldErrors.length > 3 ? `${fieldErrors.length} 筆` : fieldErrors.join('；');
           successMessage += `\n但有 ${errorCount} 資料有問題，已忽略。`;
         }
-        
+
         message.success(successMessage);
       } else if (fieldErrors.length > 0) {
-        // 只有錯誤，沒有成功更新
         message.warning(`上傳失敗：${fieldErrors.length} 筆資料有問題，請檢查Excel格式。具體錯誤: ${fieldErrors.slice(0, 3).join('；')}${fieldErrors.length > 3 ? '...' : ''}`);
       } else {
-        message.warning('沒有更新任何資料。請確認Excel表格包含「籤號」和「隊伍」欄位，且籤號與系統中的籤號相符。');
+        message.warning('沒有更新任何資料。請確認Excel表格包含「籤號」和「隊伍」欄位。');
       }
       
     } catch (error) {
@@ -2380,7 +2398,7 @@ const handleFileUpload = (event) => {
           </div>
           <div className="flex items-center gap-1">
             <span className="text-xs text-gray-500 whitespace-nowrap">比賽項目</span>
-            <Select value={gameTitle} onChange={setGameTitle} style={{ width: '110px' }}>
+            <Select value={gameTitle} onChange={setGameTitle} style={{ width: '150px' }}>
               <Option value="WGP">WGP GiveMe5</Option>
             </Select>
           </div>
@@ -2430,7 +2448,7 @@ const handleFileUpload = (event) => {
           </button>
           <label className="px-3 py-1 rounded text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 cursor-pointer">
             📥 上傳隊伍表
-            <input type="file" className="hidden" onChange={handleFileUpload} accept=".xlsx,.xls" />
+            <input type="file" className="hidden" onChange={handleFileUpload} onClick={(e) => { (e.target as HTMLInputElement).value = ''; }} accept=".xlsx,.xls" />
           </label>
           <button
             onClick={exportPlayersToExcel}
@@ -2446,7 +2464,7 @@ const handleFileUpload = (event) => {
           </button>
           <label className="px-3 py-1 rounded text-xs bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 cursor-pointer">
             📂 上傳狀態
-            <input type="file" className="hidden" onChange={importStateFromJSON} accept=".json" />
+            <input type="file" className="hidden" onChange={importStateFromJSON} onClick={(e) => { (e.target as HTMLInputElement).value = ''; }} accept=".json" />
           </label>
           <button
             onClick={exportStateToJSON}
