@@ -11,6 +11,9 @@ vba_output.txt
 simulate_tournament.py
 verify_fixes.py
 
+# 本機 TODO/筆記（檔名前綴 YYYY-MM-DD_）
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*.md
+
 # 根目錄誤建的 package-lock.json（實際專案在 tournament-menager/）
 /package-lock.json
 
