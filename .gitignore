@@ -1,0 +1,21 @@
+# Claude Code 本機設定
+.claude/
+
+# 本機測試資料（含選手個資，不上版控）
+*.xlsm
+*.xlsx
+excel_data.json
+vba_output.txt
+
+# 本機驗證／模擬腳本（依賴上述資料檔才能跑）
+simulate_tournament.py
+verify_fixes.py
+
+# 根目錄誤建的 package-lock.json（實際專案在 tournament-menager/）
+/package-lock.json
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
