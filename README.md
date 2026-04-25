@@ -80,12 +80,12 @@ npm install
 
 ### 啟動（網頁開發模式）
 
-- 本機測試須將 `webpack.config.js` 的 `publicPath: './'` 改為 `publicPath: '/'` 開啟localhost:3000 才能正常顯示
-
 ```bash
 npm start
 # 開啟 http://localhost:3000
 ```
+
+> `webpack.config.js` 會依 mode 自動切換 `publicPath`：dev 用 `/`、production 用 `./`，不需手動修改。
 
 ### 建置
 
@@ -93,6 +93,31 @@ npm start
 npm run build
 # 輸出至 dist/
 ```
+
+---
+
+## 部署
+
+線上版透過 `gh-pages` 套件自動推送 build 後的 `dist/` 到 `gh-pages` 分支。本專案分**正式**與**測試**兩個環境，共用同一個 GitHub Pages 站點，以子路徑區分：
+
+| 環境 | 來源分支 | 部署指令 | 網址 |
+|------|----------|----------|------|
+| 正式 | `master`  | `npm run deploy`         | `https://ritaweng.github.io/wgp-tournament-manager/` |
+| 測試 | `develop` | `npm run deploy:preview` | `https://ritaweng.github.io/wgp-tournament-manager/preview/` |
+
+### 一般流程
+
+1. 在 `develop` 分支開發新功能、修正
+2. `npm run deploy:preview` → 在 `/preview/` 試用、給人測試
+3. 確認沒問題 → `develop` 合併進 `master`
+4. 切到 `master`，`npm run deploy` → 推上正式版
+
+### 注意事項
+
+- **共享 localStorage**：兩個版本是同一個 origin（`https://ritaweng.github.io`），瀏覽器的 localStorage 會互通。測試 preview 時建議使用**無痕視窗**或不同瀏覽器，避免動到正式版的比賽狀態。
+- **不要並行部署**：避免 `deploy` 和 `deploy:preview` 同時跑，可能造成 `gh-pages` 分支推送衝突。
+- **不要省略 `-e preview`**：直接跑 `gh-pages -d dist` 預設會清空整個 `gh-pages` 分支（含 `/preview/`）；`deploy:preview` script 已綁好參數，照 npm script 跑即可。
+- **快取延遲**：GitHub Pages 部署後可能 1–10 分鐘才看到新版本，必要時用 Ctrl+F5 強制重整。
 
 ---
 
