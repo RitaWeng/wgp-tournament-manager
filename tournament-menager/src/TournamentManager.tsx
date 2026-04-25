@@ -233,6 +233,8 @@ const TournamentManager = () => {
   const [editMode, setEditMode] = useState(false);
   // 修改配對驗證結果 {round, errors}
   const [pairingValidation, setPairingValidation] = useState<{round: number, errors: string[]} | null>(null);
+  // 匯入／匯出區塊預設折疊
+  const [showImportExport, setShowImportExport] = useState(false);
   // 新增狀態用於控制「抓對」按鈕是否可用
   const [isPairingButtonDisabled, setIsPairingButtonDisabled] = useState(false);
   // 記錄哪些輪次已完成算分（鎖定）
@@ -364,8 +366,6 @@ const TournamentManager = () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
-      message.success('狀態已下載到 JSON 檔案');
     } catch (error) {
       console.error('下載狀態時發生錯誤:', error);
       message.error('下載狀態時發生錯誤');
@@ -545,7 +545,6 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     }));
     
     setPlayers(updatedPlayers);
-    message.success('抽籤完成！');
   };
 
   // 取代直接呼叫 drawLots 的 onClick
@@ -907,7 +906,6 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     });
 
     setMatches(newMatches);
-    message.success('第 ' + currentRound + ' 輪配對完成！');
   };
   // 單循環配對
   const generateRoundRobinPairings = () => {
@@ -974,7 +972,6 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
       return updatedMatchesByRound;
     });
     
-    message.success('第 ' + currentRound + ' 輪配對完成！');
   };
 
   // 決定誰先手 (黑方)
@@ -1222,7 +1219,6 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     setScoredRounds(prev => prev.includes(currentRound) ? prev : [...prev, currentRound]);
 
     setPlayers(playersWithAuxScores);
-    message.success('得分計算完成！');
   };
 
   // 將選手成績下載為Excel格式
@@ -1309,7 +1305,6 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     
     // 下載Excel檔案
     downloadExcel(sheets, `${gameTitle}_比賽資料_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    message.success('下載比賽資料成功！');
   };
   
   // 將桌次表下載為Excel格式
@@ -1354,9 +1349,19 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     
     // 下載Excel檔案
     downloadExcel([{ name: `第${roundToExport}輪桌次表`, data: tableData }], `${gameTitle}_第${roundToExport}輪_桌次表_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    message.success(`下載第 ${roundToExport} 輪桌次表成功！`);
   };
-  
+
+  // 下載隊伍表範例 Excel 檔
+  const downloadSampleTeamList = () => {
+    const sample = [
+      ['籤號', '隊伍'],
+      [1, '範例隊伍 A'],
+      [2, '範例隊伍 B'],
+      [3, '範例隊伍 C'],
+    ];
+    downloadExcel([{ name: '隊伍表範例', data: sample }], `隊伍表範例_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   // 處理上傳籤號與隊伍對應表
 const handleFileUpload = (event) => {
   const file = event.target.files[0];
@@ -1830,7 +1835,6 @@ const handleFileUpload = (event) => {
     
     // 下載Excel檔案
     downloadExcel(sheets, `${gameTitle}_全部桌次表_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    message.success('下載全部桌次表成功！');
   };
 
   // 取得兩名選手間的直接對戰結果
@@ -1955,8 +1959,6 @@ const handleFileUpload = (event) => {
 
     // 清除 localStorage 中保存的狀態
     localStorage.removeItem('tournamentManagerState');
-    
-    message.success('系統已重設！');
   };
 
   // 解除輪次鎖定，允許重新登錄結果並算分
@@ -2246,29 +2248,29 @@ const handleFileUpload = (event) => {
         </div>
         
         <div className="overflow-x-auto max-h-[calc(100vh-180px)]">
-          <table className="w-full border-collapse border table-fixed">
+          <table className="w-full border-collapse border table-fixed min-w-[420px]">
             <thead>
               <tr className="bg-gray-200 sticky top-0">
-                <th className="border p-2 w-10">籤號</th>
-                <th className="border p-2 w-32">隊伍</th>
+                <th className="border p-2 w-10 sticky left-0 bg-gray-200 z-30">籤號</th>
+                <th className="border p-2 w-32 sticky left-10 bg-gray-200 z-30">隊伍</th>
+                <th className="border p-2 w-12 sticky left-[168px] bg-yellow-100 z-30">名次</th>
+                <th className="border p-2 w-12 sticky left-[216px] bg-red-100 z-30">總分</th>
+                <th className="border p-2 w-12 sticky left-[264px] bg-green-100 z-30">輔分一</th>
+                <th className="border p-2 w-12 sticky left-[312px] bg-green-100 z-30">輔分二</th>
+                <th className="border p-2 w-12 sticky left-[360px] bg-green-100 z-30 shadow-[2px_0_0_0_#9ca3af]">輔分三</th>
                 {Array.from({ length: rounds }).map((_, i) => (
                   <React.Fragment key={i}>
-                    <th className="border p-2 w-12">R{i + 1}</th>
-                    <th className="border p-2 w-24">R{i + 1}對手</th>
+                    <th className="border p-2 w-12 z-20">R{i + 1}</th>
+                    <th className="border p-2 w-24 z-20">R{i + 1}對手</th>
                   </React.Fragment>
                 ))}
-                <th className="border p-2 bg-red-100 w-12">總分</th>
-                <th className="border p-2 bg-green-100 w-12">輔分一</th>
-                <th className="border p-2 bg-green-100 w-12">輔分二</th>
-                <th className="border p-2 bg-green-100 w-12">輔分三</th>
-                <th className="border p-2 bg-yellow-100 w-12">名次</th>
               </tr>
             </thead>
             <tbody>
               {sortedPlayers.map((player, index) => (
-                <tr key={index} className="hover:bg-blue-100">
-                  <td className="border p-2 text-center">{player.number}</td>
-                  <td className="border p-2">
+                <tr key={index} className="group hover:bg-blue-100">
+                  <td className="border p-2 text-center sticky left-0 bg-white group-hover:bg-blue-100 z-10">{player.number}</td>
+                  <td className="border p-2 sticky left-10 bg-white group-hover:bg-blue-100 z-10">
                     {editMode ? (
                       <input
                         type="text"
@@ -2280,7 +2282,11 @@ const handleFileUpload = (event) => {
                       player.name
                     )}
                   </td>
-                  {/* 確保輪次資料顯示正確 */}
+                  <td className="border p-2 text-center sticky left-[168px] bg-white group-hover:bg-blue-100 z-10">{player.rank}</td>
+                  <td className="border p-2 text-center sticky left-[216px] bg-white group-hover:bg-blue-100 z-10">{player.totalScore}</td>
+                  <td className="border p-2 text-center sticky left-[264px] bg-white group-hover:bg-blue-100 z-10">{player.auxScore1}</td>
+                  <td className="border p-2 text-center sticky left-[312px] bg-white group-hover:bg-blue-100 z-10">{player.auxScore2}</td>
+                  <td className="border p-2 text-center sticky left-[360px] bg-white group-hover:bg-blue-100 z-10 shadow-[2px_0_0_0_#9ca3af]">{player.auxScore3}</td>
                   {Array.from({ length: rounds }).map((_, i) => {
                     const round = player.rounds[i] || { score: null, opponent: null };
                     return (
@@ -2294,11 +2300,6 @@ const handleFileUpload = (event) => {
                       </React.Fragment>
                     );
                   })}
-                  <td className="border p-2 text-center">{player.totalScore}</td>
-                  <td className="border p-2 text-center">{player.auxScore1}</td>
-                  <td className="border p-2 text-center">{player.auxScore2}</td>
-                  <td className="border p-2 text-center">{player.auxScore3}</td>
-                  <td className="border p-2 text-center">{player.rank}</td>
                 </tr>
               ))}
             </tbody>
@@ -2436,6 +2437,37 @@ const handleFileUpload = (event) => {
               </span>
             ))}
           </div>
+
+          {/* 流程引導提示（接在 12345 後面，視窗窄時自動 wrap） */}
+          {(() => {
+            const existingRounds = Object.keys(matchesByRound).map(r => parseInt(r, 10));
+            const isCurrentScored = scoredRounds.includes(currentRound);
+            const isCurrentPaired = existingRounds.includes(currentRound);
+            const allDone = scoredRounds.length >= rounds;
+
+            let msg = '';
+            let style = 'bg-blue-50 border-blue-200 text-blue-800';
+            if (allDone) {
+              msg = `🏆 所有 ${rounds} 輪賽事均已完成！可下載最終成績。`;
+              style = 'bg-green-50 border-green-300 text-green-800';
+            } else if (isCurrentScored) {
+              msg = `✅ 第 ${currentRound} 輪已完成。請將「當前輪次」改為 ${currentRound + 1}，然後點擊「抓對」。`;
+              style = 'bg-green-50 border-green-300 text-green-800';
+            } else if (isPairingButtonDisabled) {
+              msg = `▶ 第 ${currentRound} 輪桌次已生成。請在右側登錄各場結果，完成後點擊「算分」。`;
+              style = 'bg-amber-50 border-amber-300 text-amber-800';
+            } else if (isCurrentPaired) {
+              msg = `⚠ 第 ${currentRound} 輪已有桌次但尚未算分，請確認所有結果後點擊「算分」。`;
+              style = 'bg-orange-50 border-orange-300 text-orange-800';
+            } else {
+              msg = `➡ 準備第 ${currentRound} 輪：${currentRound === 1 ? '可先「抽籤」調整籤號順序，再' : ''}點擊「抓對」生成本輪桌次。`;
+            }
+            return (
+              <div className={`px-2 py-0.5 ml-2 rounded border text-sm font-medium ${style}`}>
+                {msg}
+              </div>
+            );
+          })()}
         </div>
 
         {/* 次要操作按鈕（設定列正下方） */}
@@ -2451,61 +2483,86 @@ const handleFileUpload = (event) => {
             <input type="file" className="hidden" onChange={handleFileUpload} onClick={(e) => { (e.target as HTMLInputElement).value = ''; }} accept=".xlsx,.xls" />
           </label>
           <button
-            onClick={exportPlayersToExcel}
-            className="px-3 py-1 rounded text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+            onClick={() => setShowImportExport(v => !v)}
+            className={`px-3 py-1 rounded text-xs border border-dashed flex items-center gap-1.5 ${
+              showImportExport
+                ? 'bg-indigo-100 text-indigo-800 border-indigo-400'
+                : 'bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100'
+            }`}
+            aria-expanded={showImportExport}
           >
-            📤 下載選手成績
-          </button>
-          <button
-            onClick={exportMatchesToExcel}
-            className="px-3 py-1 rounded text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
-          >
-            📤 下載桌次表
-          </button>
-          <label className="px-3 py-1 rounded text-xs bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 cursor-pointer">
-            📂 上傳狀態
-            <input type="file" className="hidden" onChange={importStateFromJSON} onClick={(e) => { (e.target as HTMLInputElement).value = ''; }} accept=".json" />
-          </label>
-          <button
-            onClick={exportStateToJSON}
-            className="px-3 py-1 rounded text-xs bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200"
-          >
-            💾 下載狀態
+            <span
+              className="text-sm leading-none transition-transform inline-block"
+              style={{ transform: showImportExport ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+              aria-hidden="true"
+            >
+              ▼
+            </span>
+            <span>匯入/匯出（隊伍表範例、狀態備份）</span>
           </button>
         </div>
 
-        <Divider className="my-1" />
-
-        {/* 流程引導提示 */}
-        {(() => {
-          const existingRounds = Object.keys(matchesByRound).map(r => parseInt(r, 10));
-          const isCurrentScored = scoredRounds.includes(currentRound);
-          const isCurrentPaired = existingRounds.includes(currentRound);
-          const allDone = scoredRounds.length >= rounds;
-
-          let msg = '';
-          let style = 'bg-blue-50 border-blue-200 text-blue-800';
-          if (allDone) {
-            msg = `🏆 所有 ${rounds} 輪賽事均已完成！可下載最終成績。`;
-            style = 'bg-green-50 border-green-300 text-green-800';
-          } else if (isCurrentScored) {
-            msg = `✅ 第 ${currentRound} 輪已完成。請將「當前輪次」改為 ${currentRound + 1}，然後點擊「抓對」。`;
-            style = 'bg-green-50 border-green-300 text-green-800';
-          } else if (isPairingButtonDisabled) {
-            msg = `▶ 第 ${currentRound} 輪桌次已生成。請在右側登錄各場結果，完成後點擊「算分」。`;
-            style = 'bg-amber-50 border-amber-300 text-amber-800';
-          } else if (isCurrentPaired) {
-            msg = `⚠ 第 ${currentRound} 輪已有桌次但尚未算分，請確認所有結果後點擊「算分」。`;
-            style = 'bg-orange-50 border-orange-300 text-orange-800';
-          } else {
-            msg = `➡ 準備第 ${currentRound} 輪：${currentRound === 1 ? '可先「抽籤」調整籤號順序，再' : ''}點擊「抓對」生成本輪桌次。`;
-          }
-          return (
-            <div className={`px-3 py-1.5 mb-1.5 rounded border text-sm ${style}`}>
-              {msg}
+        {showImportExport && (
+          <div className="mb-1 p-2 rounded border border-gray-200 bg-gray-50 text-xs">
+            {/* Excel 下載 / 範例 */}
+            <div className="mb-2">
+              <div className="font-semibold text-gray-700 mb-1">Excel 下載 / 範例</div>
+              <div className="flex flex-wrap gap-1.5 items-center mb-1">
+                <button
+                  onClick={exportPlayersToExcel}
+                  className="px-3 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                >
+                  📤 下載選手成績
+                </button>
+                <button
+                  onClick={exportMatchesToExcel}
+                  className="px-3 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                >
+                  📤 下載桌次表
+                </button>
+                <button
+                  onClick={downloadSampleTeamList}
+                  className="px-3 py-1 rounded bg-white text-gray-700 hover:bg-gray-100 border border-gray-300"
+                >
+                  📋 下載隊伍表範例
+                </button>
+              </div>
+              <div className="text-gray-600 leading-relaxed">
+                <div className="mb-0.5">
+                  <span className="font-semibold">隊伍表必填欄位：</span>
+                  <span className="ml-1"><code className="bg-white px-1 rounded border">籤號</code>（數字，從 1 開始）</span>
+                  <span className="mx-1">、</span>
+                  <span><code className="bg-white px-1 rounded border">隊伍</code>（文字）</span>
+                </div>
+                <div className="text-gray-500">
+                  欄位名稱可使用同義字（如「籤號／編號／號碼／No」、「隊伍／隊名／團隊／名稱」）。第一列為標題，其後每列一隊。
+                </div>
+              </div>
             </div>
-          );
-        })()}
+
+            {/* 狀態備份 */}
+            <div>
+              <div className="font-semibold text-gray-700 mb-1">狀態備份</div>
+              <div className="flex flex-wrap gap-1.5 items-center mb-1">
+                <label className="px-3 py-1 rounded bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 cursor-pointer">
+                  📂 上傳狀態
+                  <input type="file" className="hidden" onChange={importStateFromJSON} onClick={(e) => { (e.target as HTMLInputElement).value = ''; }} accept=".json" />
+                </label>
+                <button
+                  onClick={exportStateToJSON}
+                  className="px-3 py-1 rounded bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200"
+                >
+                  💾 下載狀態
+                </button>
+              </div>
+              <div className="text-gray-500">
+                把目前所有資料（隊伍、輪次、分數）打包為 JSON 檔，可匯出備份或在另一台電腦上「上傳狀態」還原。
+              </div>
+            </div>
+          </div>
+        )}
+
+        <Divider className="my-1" />
 
         {/* 主要操作按鈕（單行，說明文字行內顯示） */}
         <div className="flex gap-2">
