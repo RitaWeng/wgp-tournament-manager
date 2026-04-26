@@ -2688,14 +2688,14 @@ const handleFileUpload = (event) => {
     return `第${numText}名優勝`;
   };
 
-  // 桌次表投影視圖：proj-bg 底 + 置中分欄 + 奇偶桌分色卡片
+  // 桌次表投影視圖：對齊排行榜風格 — 色帶 gradient + 同色邊線，置中分欄一頁呈現
   const renderTablesProjection = () => {
     const matchesForRound = matchesByRound[selectedRound] || [];
     const total = matchesForRound.length;
     const nameOf = (num: number) => players.find(p => p.number === num)?.name || '';
 
     return (
-      <div className="flex-1 flex flex-col items-center p-8 overflow-hidden min-h-0">
+      <div className="flex-1 flex flex-col items-center p-8 overflow-hidden min-h-0 standings-stage">
         <div className="text-center mb-6 flex-shrink-0">
           <div className="text-[10px] tracking-[0.4em] text-[var(--accent)] font-medium mb-2">WGP TOURNAMENT</div>
           <h1 className="text-5xl font-bold tracking-tight">{gameTitle}</h1>
@@ -2705,53 +2705,46 @@ const handleFileUpload = (event) => {
         {total === 0 ? (
           <div className="flex-1 flex items-center justify-center text-3xl text-[var(--text-muted)]">尚未生成桌次表</div>
         ) : (
-          <div className="flex-1 w-full flex flex-col flex-wrap content-center justify-center items-center gap-x-6 gap-y-3 min-h-0 overflow-hidden">
+          <div className="flex-1 w-full flex flex-col flex-wrap content-center justify-center items-center gap-x-6 gap-y-2 min-h-0 overflow-hidden">
             {matchesForRound.map((m: any, mi: number) => {
               const isBye = m.player2 === 0;
               const isOdd = m.table % 2 === 1;
-              const cardBg = isOdd
-                ? 'bg-gradient-to-br from-[oklch(0.97_0.04_85)] to-[oklch(0.93_0.08_85)]'   /* 奇數桌：暖黃漸層 */
-                : 'bg-gradient-to-br from-[oklch(0.97_0.03_230)] to-[oklch(0.92_0.06_230)]'; /* 偶數桌：冷藍漸層 */
-              const shadowTint = isOdd
-                ? '0 6px 20px -8px oklch(0.70 0.14 85 / 0.35)'
-                : '0 6px 20px -8px oklch(0.60 0.12 230 / 0.30)';
-              if (isBye) {
-                return (
-                  <div
-                    key={mi}
-                    className={`rounded-2xl px-5 py-3 flex items-center gap-4 w-[28rem] border border-white/40 ${cardBg}`}
-                    style={{ boxShadow: shadowTint }}
-                  >
-                    <div className="w-14 h-14 rounded-full bg-white/70 flex items-center justify-center flex-shrink-0 border-2 border-dashed border-[var(--text-muted)]/50">
-                      <span className="text-3xl text-[var(--text-muted)] leading-none">—</span>
-                    </div>
-                    <span className="font-mono-num text-lg text-[var(--text-muted)] tabular flex-shrink-0">#{m.player1}</span>
-                    <span className="text-2xl font-bold truncate flex-1 text-[var(--text-secondary)]">{nameOf(m.player1)}</span>
-                    <Pill tone="accent" size="md">輪空</Pill>
-                  </div>
-                );
-              }
+              // 對照排行榜：from-[色/透明度] to-transparent + 同色 border
+              const cardClass = isBye
+                ? 'bg-gradient-to-r from-[oklch(0.85_0.02_250_/_0.20)] to-transparent border-[oklch(0.70_0.02_250_/_0.35)]'
+                : isOdd
+                ? 'bg-gradient-to-r from-[oklch(0.78_0.14_85_/_0.22)] to-transparent border-[oklch(0.70_0.15_85_/_0.45)]'   /* 暖琥珀 */
+                : 'bg-gradient-to-r from-[oklch(0.72_0.13_240_/_0.18)] to-transparent border-[oklch(0.58_0.14_240_/_0.42)]'; /* 冷藍 */
+              const numColor = isBye
+                ? 'text-[var(--text-muted)]'
+                : isOdd
+                ? 'text-[oklch(0.55_0.15_85)]'
+                : 'text-[oklch(0.48_0.16_240)]';
               return (
-                <div
-                  key={mi}
-                  className={`rounded-2xl px-5 py-3 flex items-center gap-4 w-[30rem] border border-white/40 ${cardBg}`}
-                  style={{ boxShadow: shadowTint }}
-                >
-                  <div className="w-14 h-14 rounded-full bg-white/70 flex flex-col items-center justify-center flex-shrink-0 border-2 border-[var(--accent)]/40">
-                    <div className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] leading-none mb-0.5">桌</div>
-                    <div className="font-mono-num text-2xl font-bold text-[var(--accent)] leading-none">{m.table}</div>
+                <div key={mi} className={`flex items-center gap-4 px-5 py-3 rounded-xl border w-[30rem] ${cardClass}`}>
+                  <div className="flex flex-col items-center w-14 flex-shrink-0">
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] leading-none mb-1">桌</div>
+                    <div className={`font-mono-num text-3xl font-bold leading-none tabular ${numColor}`}>{isBye ? '—' : m.table}</div>
                   </div>
-                  <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono-num text-base text-[var(--text-muted)] tabular flex-shrink-0">#{m.player1}</span>
-                      <span className="text-2xl font-bold truncate">{nameOf(m.player1)}</span>
+                  {isBye ? (
+                    <>
+                      <Pill tone="muted" size="sm">#{m.player1}</Pill>
+                      <span className="text-2xl font-bold truncate flex-1 text-[var(--text-secondary)]">{nameOf(m.player1)}</span>
+                      <Pill tone="muted" size="md">輪空</Pill>
+                    </>
+                  ) : (
+                    <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Pill tone="muted" size="sm">#{m.player1}</Pill>
+                        <span className="text-2xl font-bold truncate">{nameOf(m.player1)}</span>
+                      </div>
+                      <div className="text-[10px] tracking-[0.3em] text-[var(--text-muted)] font-mono-num font-semibold px-1">VS</div>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Pill tone="muted" size="sm">#{m.player2}</Pill>
+                        <span className="text-2xl font-bold truncate">{nameOf(m.player2)}</span>
+                      </div>
                     </div>
-                    <div className="text-[10px] tracking-[0.3em] text-[var(--text-muted)] font-mono-num font-bold px-2 py-1 rounded-md bg-white/50">VS</div>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono-num text-base text-[var(--text-muted)] tabular flex-shrink-0">#{m.player2}</span>
-                      <span className="text-2xl font-bold truncate">{nameOf(m.player2)}</span>
-                    </div>
-                  </div>
+                  )}
                 </div>
               );
             })}
