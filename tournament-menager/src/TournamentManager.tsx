@@ -146,7 +146,7 @@ type IconName =
   | 'monitor' | 'dice' | 'swap' | 'calculator' | 'check' | 'x'
   | 'info' | 'help' | 'edit' | 'eye' | 'lock' | 'unlock'
   | 'crown' | 'trophy' | 'list' | 'grid' | 'expand' | 'minimize'
-  | 'arrow_right' | 'sparkle' | 'search' | 'alert' | 'plus' | 'minus';
+  | 'arrow_right' | 'sparkle' | 'search' | 'alert' | 'plus' | 'minus' | 'palette';
 
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
   chevronDown: <path d="M6 9l6 6 6-6" />,
@@ -183,7 +183,17 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
   alert:       <><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></>,
   plus:        <path d="M12 5v14M5 12h14" />,
   minus:       <path d="M5 12h14" />,
+  palette:     <><circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12.5" r="1"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c3.31 0 6-2.69 6-6 0-4.96-4.49-9-10-9z"/></>,
 };
+
+// 主題切換清單（與 index.css 中的 :root[data-theme=...] 對應）
+type ThemeId = 'light' | 'dark' | 'paper' | 'navy';
+const THEMES: { id: ThemeId; label: string; swatch: [string, string, string] }[] = [
+  { id: 'light', label: '淺色極簡', swatch: ['#FFFFFF', '#EBEEF2', 'oklch(0.62 0.17 50)'] },
+  { id: 'dark',  label: '深色競技', swatch: ['#131820', '#0B0E13', 'oklch(0.75 0.18 55)'] },
+  { id: 'paper', label: '紙本資料', swatch: ['#FFFFFF', '#F5F2EC', 'oklch(0.42 0.18 28)'] },
+  { id: 'navy',  label: '午夜寶藍', swatch: ['#17222F', '#0F1822', 'oklch(0.78 0.14 195)'] },
+];
 
 const Icon = ({ name, className = "w-4 h-4", strokeWidth = 2 }: { name: IconName; className?: string; strokeWidth?: number }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
@@ -384,6 +394,28 @@ const TournamentManager = () => {
   const [pairingEditMode, setPairingEditMode] = useState<boolean>(false);
   // 初次使用引導橫幅是否已被使用者手動關閉
   const [welcomeDismissed, setWelcomeDismissed] = useState<boolean>(false);
+  // 主題切換：從 localStorage 讀回，預設 light
+  const [theme, setTheme] = useState<ThemeId>(() => {
+    if (typeof window === 'undefined') return 'light';
+    const saved = window.localStorage.getItem('wgp-theme') as ThemeId | null;
+    return saved && THEMES.some(t => t.id === saved) ? saved : 'light';
+  });
+  const [themePickerOpen, setThemePickerOpen] = useState<boolean>(false);
+  // 主題改變時：套用到 <html data-theme=...> 並寫回 localStorage
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { window.localStorage.setItem('wgp-theme', theme); } catch {}
+  }, [theme]);
+  // 點外面收合主題選單
+  useEffect(() => {
+    if (!themePickerOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      const el = document.getElementById('theme-picker-root');
+      if (el && !el.contains(e.target as Node)) setThemePickerOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [themePickerOpen]);
   const saveStateToLocalStorage = () => {
     try {
       // 建立一個包含所有需要保存的狀態的對象
@@ -2920,6 +2952,46 @@ const handleFileUpload = (event) => {
                   })}
                 </div>
 
+                <div id="theme-picker-root" className="relative">
+                  <button
+                    onClick={() => setThemePickerOpen(o => !o)}
+                    className="btn-ghost px-3 h-8 rounded-md text-sm flex items-center gap-1.5"
+                    title="切換主題"
+                    aria-haspopup="true"
+                    aria-expanded={themePickerOpen}
+                  >
+                    <Icon name="palette" className="w-4 h-4"/> 主題
+                    <Icon name="chevronDown" className="w-3 h-3 opacity-60"/>
+                  </button>
+                  {themePickerOpen && (
+                    <div
+                      className="absolute right-0 top-full mt-1 z-30 w-56 p-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)]"
+                      style={{ boxShadow: '0 8px 24px -8px rgba(15, 20, 30, 0.18)' }}
+                      role="menu"
+                    >
+                      {THEMES.map(t => {
+                        const active = t.id === theme;
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => { setTheme(t.id); setThemePickerOpen(false); }}
+                            className={`w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-left transition-colors ${active ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-primary)]'}`}
+                            role="menuitemradio"
+                            aria-checked={active}
+                          >
+                            <span className="flex h-5 w-9 rounded border border-[var(--border-default)] overflow-hidden flex-shrink-0">
+                              <span className="flex-1" style={{ background: t.swatch[0] }}/>
+                              <span className="flex-1" style={{ background: t.swatch[1] }}/>
+                              <span className="flex-1" style={{ background: t.swatch[2] }}/>
+                            </span>
+                            <span className="flex-1 font-medium">{t.label}</span>
+                            {active && <Icon name="check" className="w-4 h-4 flex-shrink-0" strokeWidth={3}/>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 <button onClick={() => setShowAuxScoreHelp(true)} className="btn-ghost px-3 h-8 rounded-md text-sm flex items-center gap-1.5">
                   <Icon name="help" className="w-4 h-4"/> 輔分說明
                 </button>
