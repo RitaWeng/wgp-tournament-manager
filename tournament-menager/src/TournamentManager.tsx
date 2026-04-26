@@ -2950,7 +2950,7 @@ const handleFileUpload = (event) => {
                   <div className="text-sm">
                     <span className="font-semibold">歡迎使用！</span>
                     <span className="ml-2 opacity-90">
-                      請先上傳隊伍表 Excel（或下載範例），即可開始比賽配對。
+                      請先上傳隊伍表 Excel（或下載範例），即可開始比賽配對。之後可在【匯入/匯出】中找到隊伍表範例。
                     </span>
                   </div>
                 </div>
