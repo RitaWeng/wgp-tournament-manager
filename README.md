@@ -108,9 +108,30 @@ npm run build
 ### 一般流程
 
 1. 在 `develop` 分支開發新功能、修正
-2. `npm run deploy:preview` → 在 `/preview/` 試用、給人測試
-3. 確認沒問題 → `develop` 合併進 `master`
-4. 切到 `master`，`npm run deploy` → 推上正式版
+2. **升版**（見下節）：`patch` 給 preview、`minor`/`major` 視變更幅度
+3. `npm run deploy:preview` → 在 `/preview/` 試用、給人測試
+4. 確認沒問題 → `develop` 合併進 `master`
+5. 切到 `master`，`npm run deploy` → 推上正式版
+
+### 版本升級
+
+每次 deploy 前先升版，讓 build 進去的 `package.json` 版本號跟「關於」彈窗顯示的版號對得上。
+
+```bash
+cd tournament-menager
+npm version patch   # 1.1.0 → 1.1.1
+```
+
+⚠ **Gotcha**：因為 `package.json` 在子目錄 `tournament-menager/` 而非 git root，`npm version` 只會更新檔案、**不會自動建立 commit 與 tag**（但 `postversion` 仍會跑 `git push`，把現有未推的 commit 推上去，誤以為成功）。需手動補上：
+
+```bash
+git add tournament-menager/package.json tournament-menager/package-lock.json
+git commit -m "chore: bump version to X.Y.Z"
+git tag vX.Y.Z
+git push && git push --tags
+```
+
+之後再跑 `npm run deploy:preview` 或 `npm run deploy`。
 
 ### 注意事項
 
