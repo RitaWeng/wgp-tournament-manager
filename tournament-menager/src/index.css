@@ -10,7 +10,7 @@
 /* 風格 1：淺色極簡（預設） */
 :root,
 :root[data-theme="light"] {
-  --bg-base: #F7F8FA;
+  --bg-base: #EBEEF2;
   --bg-surface: #FFFFFF;
   --bg-elevated: #FBFBFC;
   --bg-hover: #F1F3F6;

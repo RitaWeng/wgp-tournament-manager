@@ -382,6 +382,8 @@ const TournamentManager = () => {
   const [viewMode, setViewMode] = useState<'compact' | 'detail'>('detail');
   // UI 重構：桌次卡片是否進入「修改配對」模式（兩側選手變成 select 可換人）
   const [pairingEditMode, setPairingEditMode] = useState<boolean>(false);
+  // 初次使用引導橫幅是否已被使用者手動關閉
+  const [welcomeDismissed, setWelcomeDismissed] = useState<boolean>(false);
   const saveStateToLocalStorage = () => {
     try {
       // 建立一個包含所有需要保存的狀態的對象
@@ -2942,8 +2944,8 @@ const handleFileUpload = (event) => {
               </div>
             </div>
 
-            {/* 初次使用引導橫幅（任何時候都顯示） */}
-            {isInitialState && (
+            {/* 初次使用引導橫幅（任何時候都顯示，可手動關閉） */}
+            {isInitialState && !welcomeDismissed && (
               <div className="px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--win-soft)] flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2 flex-1 min-w-0 text-[var(--win)]">
                   <Icon name="sparkle" className="w-5 h-5 flex-shrink-0"/>
@@ -2964,6 +2966,14 @@ const handleFileUpload = (event) => {
                     className="btn-ghost inline-flex items-center justify-center gap-1.5 rounded-md px-3 h-9 text-sm whitespace-nowrap border-[var(--win)] text-[var(--win)] hover:bg-[var(--win-soft)]"
                   >
                     <Icon name="download" className="w-4 h-4"/> 下載範例
+                  </button>
+                  <button
+                    onClick={() => setWelcomeDismissed(true)}
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-md text-[var(--win)] hover:bg-[var(--win-soft)] transition-colors"
+                    title="關閉歡迎提示"
+                    aria-label="關閉歡迎提示"
+                  >
+                    <Icon name="x" className="w-4 h-4"/>
                   </button>
                 </div>
               </div>
