@@ -32,13 +32,16 @@ const downloadExcel = (data, fileName) => {
   XLSX.writeFile(wb, fileName);
 };
 
-// 自定義基本組件
+// ─────────────────────────────────────────────────────────────────
+// 自定義基本組件（重構：套用 CSS 變數主題系統）
+// ─────────────────────────────────────────────────────────────────
 const Title = ({ level, children, className }: { level?: number; children?: React.ReactNode; className?: string }) => {
   const Tag = `h${level || 2}` as keyof JSX.IntrinsicElements;
   return <Tag className={`font-bold mb-2 ${className || ''}`}>{children}</Tag>;
 };
 
-const Button = ({ onClick, type, block, danger, size, children, className, disabled }: {
+// Button：保留既有 API（type='primary' / danger / block / size='small'），改用 .btn-* utility
+const Button = ({ onClick, type, block, danger, size, children, className, disabled, title }: {
   onClick?: () => void;
   type?: string;
   block?: boolean;
@@ -47,29 +50,30 @@ const Button = ({ onClick, type, block, danger, size, children, className, disab
   children?: React.ReactNode;
   className?: string;
   disabled?: boolean;
+  title?: string;
 }) => {
   const getButtonClass = () => {
-    let classes = "px-3 py-1 rounded font-medium focus:outline-none ";
-    
-    if (disabled) {
-      classes += "bg-gray-300 text-gray-500 cursor-not-allowed ";
-    } else {
-      if (type === 'primary') classes += "bg-blue-500 text-white hover:bg-blue-600 ";
-      else if (danger) classes += "bg-red-500 text-white hover:bg-red-600 ";
-      else classes += "bg-gray-200 text-gray-800 hover:bg-gray-300 ";
-    }
-    
+    let classes = "inline-flex items-center justify-center gap-1.5 rounded-md font-medium focus:outline-none ";
+
+    // 尺寸
+    if (size === 'small') classes += "px-2.5 h-7 text-xs ";
+    else classes += "px-3 h-8 text-sm ";
+
+    // 配色（disabled 由 .btn-* 內建處理）
+    if (type === 'primary') classes += "btn-primary ";
+    else if (danger) classes += "btn-danger ";
+    else classes += "btn-ghost ";
+
     if (block) classes += "w-full ";
-    if (size === 'small') classes += "px-2 py-1 text-sm ";
-    
     return classes + (className || "");
   };
-  
+
   return (
-    <button 
-      onClick={disabled ? undefined : onClick} 
+    <button
+      onClick={disabled ? undefined : onClick}
       className={getButtonClass()}
       disabled={disabled}
+      title={title}
     >
       {children}
     </button>
@@ -78,10 +82,10 @@ const Button = ({ onClick, type, block, danger, size, children, className, disab
 
 const Select = ({ value, onChange, style, children }) => {
   return (
-    <select 
-      value={value} 
+    <select
+      value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full p-1 border rounded"
+      className="w-full px-2 h-8 text-sm"
       style={style}
     >
       {children}
@@ -95,13 +99,13 @@ const Option = ({ value, children }) => {
 
 const InputNumber = ({ min, max, value, onChange, style }: { min?: number; max?: number; value: number; onChange: (v: number) => void; style?: React.CSSProperties }) => {
   return (
-    <input 
+    <input
       type="number"
       min={min}
       max={max}
       value={value}
       onChange={(e) => onChange(parseInt(e.target.value) || 0)}
-      className="w-full p-1 border rounded"
+      className="w-full px-2 h-8 text-base font-mono-num"
       style={style}
     />
   );
@@ -109,28 +113,143 @@ const InputNumber = ({ min, max, value, onChange, style }: { min?: number; max?:
 
 const Checkbox = ({ checked, onChange, children }) => {
   return (
-    <label className="inline-flex items-center">
-      <input 
+    <label className="inline-flex items-center cursor-pointer">
+      <input
         type="checkbox"
         checked={checked}
         onChange={onChange}
-        className="mr-2"
+        className="mr-2 accent-[var(--accent)]"
       />
-      <span>{children}</span>
+      <span className="text-sm text-[var(--text-secondary)]">{children}</span>
     </label>
   );
 };
 
 const Card = ({ className, children }) => {
   return (
-    <div className={`bg-white shadow rounded p-2 ${className || ''}`}>
+    <div className={`surface rounded-lg p-3 ${className || ''}`}>
       {children}
     </div>
   );
 };
 
 const Divider = ({ className }: { className?: string } = {}) => {
-  return <hr className={`my-2 ${className || ''}`} />;
+  return <hr className={`my-2 border-t-0 divider-h ${className || ''}`} />;
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Icon 元件 — 線稿風 SVG，沿用 design-mock/components.jsx 的圖示集
+// ─────────────────────────────────────────────────────────────────
+type IconName =
+  | 'chevronDown' | 'chevronUp' | 'chevronRight' | 'chevronLeft'
+  | 'settings' | 'play' | 'pause' | 'refresh' | 'upload' | 'download'
+  | 'monitor' | 'dice' | 'swap' | 'calculator' | 'check' | 'x'
+  | 'info' | 'help' | 'edit' | 'eye' | 'lock' | 'unlock'
+  | 'crown' | 'trophy' | 'list' | 'grid' | 'expand' | 'minimize'
+  | 'arrow_right' | 'sparkle' | 'search' | 'alert' | 'plus' | 'minus';
+
+const ICON_PATHS: Record<IconName, React.ReactNode> = {
+  chevronDown: <path d="M6 9l6 6 6-6" />,
+  chevronUp:   <path d="M6 15l6-6 6 6" />,
+  chevronRight:<path d="M9 6l6 6-6 6" />,
+  chevronLeft: <path d="M15 6l-6 6 6 6" />,
+  settings:    <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33h.01a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v.01a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />,
+  play:        <path d="M5 3l14 9-14 9V3z" />,
+  pause:       <><path d="M6 4h4v16H6z" /><path d="M14 4h4v16h-4z" /></>,
+  refresh:     <><path d="M21 12a9 9 0 01-15 6.7L3 16" /><path d="M3 12a9 9 0 0115-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M3 21v-5h5" /></>,
+  upload:      <><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><path d="M17 8l-5-5-5 5" /><path d="M12 3v12" /></>,
+  download:    <><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></>,
+  monitor:     <><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></>,
+  dice:        <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8" cy="8" r="1" fill="currentColor"/><circle cx="16" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/></>,
+  swap:        <><path d="M7 16V4M3 8l4-4 4 4" /><path d="M17 8v12M21 16l-4 4-4-4" /></>,
+  calculator:  <><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" /></>,
+  check:       <path d="M5 13l4 4L19 7" />,
+  x:           <path d="M18 6L6 18M6 6l12 12" />,
+  info:        <><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></>,
+  help:        <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01"/></>,
+  edit:        <><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z" /></>,
+  eye:         <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>,
+  lock:        <><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0110 0v4" /></>,
+  unlock:      <><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 019.9-1" /></>,
+  crown:       <path d="M2 18l3-12 5 6 2-9 2 9 5-6 3 12H2zm0 2h20v2H2v-2z" />,
+  trophy:      <><path d="M6 9H4.5a2.5 2.5 0 010-5H6m12 5h1.5a2.5 2.5 0 000-5H18M6 4h12v6a6 6 0 01-12 0V4zM12 16v4M8 22h8" /></>,
+  list:        <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />,
+  grid:        <><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></>,
+  expand:      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>,
+  minimize:    <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>,
+  arrow_right: <path d="M5 12h14M13 5l7 7-7 7" />,
+  sparkle:     <path d="M12 2l2 7 7 2-7 2-2 7-2-7-7-2 7-2z" />,
+  search:      <><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></>,
+  alert:       <><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></>,
+  plus:        <path d="M12 5v14M5 12h14" />,
+  minus:       <path d="M5 12h14" />,
+};
+
+const Icon = ({ name, className = "w-4 h-4", strokeWidth = 2 }: { name: IconName; className?: string; strokeWidth?: number }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    {ICON_PATHS[name] || null}
+  </svg>
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Pill — 標籤膠囊，配合不同 tone 與尺寸
+// ─────────────────────────────────────────────────────────────────
+type PillTone = 'default' | 'accent' | 'win' | 'loss' | 'info' | 'warn' | 'muted';
+type PillSize = 'xs' | 'sm' | 'md';
+
+const PILL_TONES: Record<PillTone, string> = {
+  default: 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-default)]',
+  accent:  'bg-[var(--accent-soft)] text-[var(--accent)] border border-[var(--accent-border)]',
+  win:     'bg-[var(--win-soft)] text-[var(--win)] border border-[oklch(0.55_0.16_150_/_0.25)]',
+  loss:    'bg-[var(--loss-soft)] text-[var(--loss)] border border-[oklch(0.55_0.16_25_/_0.25)]',
+  info:    'bg-[var(--info-soft)] text-[var(--info)] border border-[oklch(0.55_0.16_240_/_0.25)]',
+  warn:    'bg-[var(--warn-soft)] text-[var(--warn)] border border-[oklch(0.65_0.16_70_/_0.30)]',
+  muted:   'bg-transparent text-[var(--text-muted)] border border-[var(--border-subtle)]',
+};
+const PILL_SIZES: Record<PillSize, string> = {
+  xs: 'text-[10px] px-1.5 py-0.5',
+  sm: 'text-xs px-2 py-0.5',
+  md: 'text-sm px-2.5 py-1',
+};
+
+const Pill = ({ children, tone = 'default', size = 'sm', className = '' }: {
+  children?: React.ReactNode; tone?: PillTone; size?: PillSize; className?: string;
+}) => (
+  <span className={`inline-flex items-center gap-1 rounded-full font-medium ${PILL_TONES[tone]} ${PILL_SIZES[size]} ${className}`}>
+    {children}
+  </span>
+);
+
+// ─────────────────────────────────────────────────────────────────
+// RankMedal — 名次徽章
+// ─────────────────────────────────────────────────────────────────
+const RankMedal = ({ rank }: { rank?: number }) => {
+  const cls = rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : 'rank-other';
+  return <span className={`rank-medal ${cls}`}>{rank ?? '—'}</span>;
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Modal — 通用對話框
+// ─────────────────────────────────────────────────────────────────
+const Modal = ({ open, onClose, title, children, size = 'md' }: {
+  open: boolean; onClose: () => void; title?: React.ReactNode; children?: React.ReactNode;
+  size?: 'sm' | 'md' | 'lg';
+}) => {
+  if (!open) return null;
+  const widths = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl' };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm anim-slide-up" onClick={onClose}>
+      <div className={`surface rounded-xl shadow-2xl w-full ${widths[size]} overflow-hidden`} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-subtle)]">
+          <h3 className="font-semibold text-[var(--text-primary)]">{title}</h3>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1">
+            <Icon name="x" className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5 text-sm text-[var(--text-secondary)] leading-relaxed">{children}</div>
+      </div>
+    </div>
+  );
 };
 
 const Row = ({ gutter, className, children }) => {
@@ -257,6 +376,12 @@ const TournamentManager = () => {
   const [projectionTitle, setProjectionTitle] = useState<string>('');
   // 投影名次表：只顯示前 N 名（null = 全部）
   const [standingsTopN, setStandingsTopN] = useState<number | null>(null);
+  // UI 重構：Header 是否摺疊
+  const [headerCollapsed, setHeaderCollapsed] = useState<boolean>(false);
+  // UI 重構：左欄排行榜顯示模式（compact = 卡片式、detail = 詳細表格）
+  const [viewMode, setViewMode] = useState<'compact' | 'detail'>('detail');
+  // UI 重構：桌次卡片是否進入「修改配對」模式（兩側選手變成 select 可換人）
+  const [pairingEditMode, setPairingEditMode] = useState<boolean>(false);
   const saveStateToLocalStorage = () => {
     try {
       // 建立一個包含所有需要保存的狀態的對象
@@ -2078,177 +2203,116 @@ const handleFileUpload = (event) => {
     setPairingValidation({ round, errors: [...hardErrors, ...softErrors] });
   };
 
-  // 生成桌次表
-  const generateTableView = (matchesForRound = matches, round = currentRound) => {
-    const isRoundLocked = scoredRounds.includes(round);
+  // 桌次表卡片：顯示單場對戰，點擊登錄勝方
+  const MatchCard = ({ match, matchIndex, isLocked, round }: {
+    match: any; matchIndex: number; isLocked: boolean; round: number;
+  }) => {
+    const p1 = players.find(p => p.number === match.player1);
+    const p2 = match.player2 === 0 ? null : players.find(p => p.number === match.player2);
+    const p1Won = match.player1Score === winPoint;
+    const p2Won = match.player1Score === 0;
+    const recorded = match.player1Score !== undefined || match.player2 === 0;
+    const editing = pairingEditMode && !isLocked;
 
-    const roundStatusBadge = isRoundLocked
-      ? <span className="ml-2 px-2 py-0.5 bg-gray-500 text-white text-xs rounded-full align-middle">已完成</span>
-      : round === currentRound
-        ? <span className="ml-2 px-2 py-0.5 bg-green-500 text-white text-xs rounded-full align-middle">進行中</span>
-        : null;
+    const TableCell = (
+      <div className="flex items-center justify-center w-14 bg-[var(--bg-base)] border-r border-[var(--border-subtle)] flex-shrink-0">
+        <div className="flex items-baseline gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">桌</span>
+          <span className="font-mono-num text-xl font-bold text-[var(--text-primary)] tabular leading-none">{match.table}</span>
+        </div>
+      </div>
+    );
+
+    // 修改配對模式：兩側用 select，可換人；輪空也可改
+    if (editing) {
+      // 替換 player1 → applyPairingEdit 第二參數要傳 match.player1IsBlack
+      // 替換 player2 → 傳 !match.player1IsBlack
+      const renderSelect = (currentNum: number, isP1Side: boolean) => (
+        <select
+          value={currentNum || 0}
+          onChange={e => applyPairingEdit(matchIndex, isP1Side ? !!match.player1IsBlack : !match.player1IsBlack, parseInt(e.target.value), round)}
+          className="px-2 h-10 text-base font-medium w-full bg-[var(--bg-surface)]"
+        >
+          {match.player2 === 0 && (<option value={0}>（輪空）</option>)}
+          {players.map(opt => (
+            <option key={opt.number} value={opt.number}>{opt.number}. {opt.name}</option>
+          ))}
+        </select>
+      );
+      return (
+        <div className="elevated rounded-lg overflow-hidden border-2 border-[var(--accent-border)]">
+          <div className="flex items-stretch">
+            {TableCell}
+            <div className="flex-1 grid grid-cols-[1fr_auto_1fr] items-center divide-x divide-[var(--border-subtle)] min-w-0">
+              <div className="px-2 py-1.5">{renderSelect(match.player1, true)}</div>
+              <div className="px-3 py-1.5 text-center flex-shrink-0">
+                <div className="text-xs tracking-[0.25em] text-[var(--text-muted)] font-mono-num font-semibold">VS</div>
+              </div>
+              <div className="px-2 py-1.5">{renderSelect(match.player2, false)}</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // 輪空場次（非編輯模式）
+    if (!p2) {
+      return (
+        <div className="elevated rounded-lg overflow-hidden border-l-2 border-[var(--accent)]">
+          <div className="flex items-stretch">
+            {TableCell}
+            <div className="flex-1 flex items-center gap-2 px-3 py-2">
+              <Pill tone="muted" size="sm">#{p1?.number}</Pill>
+              <span className="font-semibold text-base truncate">{p1?.name}</span>
+              <span className="ml-auto"><Pill tone="accent" size="sm">輪空勝</Pill></span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const renderSide = (player: any, isWinner: boolean, onPick: () => void) => {
+      // 樣式：鎖定後的勝方加底色、敗方半透明；未鎖定時兩邊都可點，敗方半透明但 hover 復原
+      const stateCls = isLocked
+        ? (recorded ? (isWinner ? 'bg-[var(--win-soft)]' : 'opacity-40') : '')
+        : recorded
+          ? (isWinner
+              ? 'bg-[var(--win-soft)] cursor-default'
+              : 'opacity-50 cursor-pointer hover:opacity-100 hover:bg-[var(--bg-hover)]')
+          : 'cursor-pointer hover:bg-[var(--bg-hover)]';
+      return (
+        <div
+          className={`relative px-3 py-2 transition-all duration-150 group min-w-0 ${stateCls}`}
+          onClick={!isLocked && !isWinner ? onPick : undefined}
+          title={isLocked ? undefined : (isWinner ? `${player.name} 勝` : recorded ? '點擊改為勝方' : '點擊登錄勝')}
+        >
+          <div className="flex items-center gap-2">
+            <Pill tone="muted" size="sm">#{player.number}</Pill>
+            <span className={`font-semibold text-base truncate flex-1 min-w-0 ${isWinner ? 'text-[var(--win)]' : ''}`}>{player.name}</span>
+            <span className="text-xs text-[var(--text-muted)] font-mono-num tabular flex-shrink-0">{player.totalScore} 分</span>
+            {recorded && isWinner ? (
+              <span className="flex items-center gap-0.5 text-[var(--win)] text-sm font-semibold flex-shrink-0">
+                <Icon name="check" className="w-4 h-4" strokeWidth={3}/>
+              </span>
+            ) : recorded ? (
+              <span className="text-[var(--text-muted)] text-xs flex-shrink-0">負</span>
+            ) : null}
+          </div>
+        </div>
+      );
+    };
 
     return (
-      <div className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xl font-bold">
-            第 {round} 輪桌次表 {roundStatusBadge}
-          </h2>
-          {!isRoundLocked && (
-            <button
-              onClick={() => validatePairings(round)}
-              className="px-3 py-1 text-sm bg-blue-50 border border-blue-400 text-blue-700 hover:bg-blue-100 rounded"
-            >
-              🔍 驗證配對
-            </button>
-          )}
-        </div>
-
-        {isRoundLocked && (
-          <div className="mb-3 px-3 py-2 bg-gray-100 border border-gray-300 rounded text-gray-600 text-sm flex items-center gap-2">
-            <span>🔒</span>
-            <span className="flex-1">此輪已完成算分，結果已鎖定，無法更改。</span>
-            <button
-              onClick={() => unlockRound(round)}
-              className="px-2 py-0.5 text-xs bg-white border border-gray-400 text-gray-600 hover:bg-amber-50 hover:border-amber-400 hover:text-amber-700 rounded transition-colors"
-            >
-              🔓 解除鎖定
-            </button>
+      <div className="elevated rounded-lg overflow-hidden">
+        <div className="flex items-stretch">
+          {TableCell}
+          <div className="flex-1 grid grid-cols-[1fr_auto_1fr] items-center divide-x divide-[var(--border-subtle)] min-w-0">
+            {renderSide(p1, p1Won, () => recordResult(matchIndex, match.player1, round))}
+            <div className="px-4 py-4 text-center flex-shrink-0">
+              <div className="text-xs tracking-[0.25em] text-[var(--text-muted)] font-mono-num font-semibold">VS</div>
+            </div>
+            {renderSide(p2, p2Won, () => recordResult(matchIndex, match.player2, round))}
           </div>
-        )}
-
-        {pairingValidation && pairingValidation.round === round && (
-          <div className={`mb-3 px-3 py-2 rounded text-sm border ${pairingValidation.errors.length === 0 ? 'bg-green-50 border-green-400 text-green-800' : 'bg-red-50 border-red-400 text-red-800'}`}>
-            {pairingValidation.errors.length === 0 ? (
-              <span>✅ 配對無誤，可以開始比賽。</span>
-            ) : (
-              <div>
-                <div className="font-semibold mb-1">發現以下問題，請修正後再次驗證：</div>
-                {pairingValidation.errors.map((e, i) => <div key={i}>{e}</div>)}
-              </div>
-            )}
-            <button onClick={() => setPairingValidation(null)} className="mt-1 text-xs underline opacity-60">關閉</button>
-          </div>
-        )}
-
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse border">
-            <thead>
-              <tr className={isRoundLocked ? "bg-gray-300" : "bg-gray-200"}>
-                <th className="border p-2">桌號</th>
-                <th className="border p-2">黑方</th>
-                <th className="border p-2">白方</th>
-                <th className="border p-2">結果</th>
-              </tr>
-            </thead>
-            <tbody>
-              {matchesForRound.map((match, index) => {
-                const blackPlayerNum = match.player1IsBlack ? match.player1 : match.player2;
-                const whitePlayerNum = match.player1IsBlack ? match.player2 : match.player1;
-                return (
-                <tr key={index} className={isRoundLocked ? "bg-gray-50" : "hover:bg-blue-50"}>
-                  <td className="border p-2 text-center text-gray-500">{match.table}</td>
-                  <td className="border p-2">
-                    {isRoundLocked
-                      ? <span className="text-gray-500">{getPlayerName(blackPlayerNum)}</span>
-                      : (
-                        <select
-                          value={blackPlayerNum}
-                          onChange={e => applyPairingEdit(index, true, parseInt(e.target.value), round)}
-                          className="border rounded px-1 py-0.5 text-sm w-full"
-                        >
-                          {players.map(p => (
-                            <option key={p.number} value={p.number}>{p.number}. {p.name}</option>
-                          ))}
-                        </select>
-                      )
-                    }
-                  </td>
-                  <td className="border p-2">
-                    {match.player2 === 0
-                      ? <span className="text-gray-400 italic">（輪空）</span>
-                      : isRoundLocked
-                        ? <span className="text-gray-500">{getPlayerName(whitePlayerNum)}</span>
-                        : (
-                          <select
-                            value={whitePlayerNum}
-                            onChange={e => applyPairingEdit(index, false, parseInt(e.target.value), round)}
-                            className="border rounded px-1 py-0.5 text-sm w-full"
-                          >
-                            {players.map(p => (
-                              <option key={p.number} value={p.number}>{p.number}. {p.name}</option>
-                            ))}
-                          </select>
-                        )
-                    }
-                  </td>
-                  <td className="border p-2 text-center">
-                    {isRoundLocked ? (
-                      // 鎖定狀態：用標籤顯示勝負，勝方深灰+勾，敗方淡灰
-                      <div className="flex justify-center space-x-2">
-                        {match.player2 !== 0 ? (
-                          <>
-                            <span className={`px-2 py-1 rounded text-sm ${
-                              match.player1Score === winPoint
-                                ? 'bg-gray-600 text-white font-semibold'
-                                : 'bg-gray-200 text-gray-400 line-through'
-                            }`}>
-                              {match.player1Score === winPoint ? '✓ ' : ''}{getPlayerName(match.player1)} 勝
-                            </span>
-                            <span className={`px-2 py-1 rounded text-sm ${
-                              match.player1Score === 0
-                                ? 'bg-gray-600 text-white font-semibold'
-                                : 'bg-gray-200 text-gray-400 line-through'
-                            }`}>
-                              {match.player1Score === 0 ? '✓ ' : ''}{getPlayerName(match.player2)} 勝
-                            </span>
-                          </>
-                        ) : (
-                          <span className="px-2 py-1 rounded text-sm bg-gray-600 text-white font-semibold">
-                            ✓ {getPlayerName(match.player1)} 輪空勝
-                          </span>
-                        )}
-                        {match.player1Score === undefined && match.player2 !== 0 && (
-                          <span className="px-2 py-1 text-sm text-orange-500">⚠ 未登錄</span>
-                        )}
-                      </div>
-                    ) : (
-                      // 進行中：互動按鈕
-                      <div className="flex flex-col items-center">
-                        {match.player2 !== 0 ? (
-                          <div className="flex justify-center space-x-2">
-                            <Button
-                              size="small"
-                              onClick={() => recordResult(index, match.player1, round)}
-                              type={match.player1Score === winPoint ? 'primary' : 'default'}
-                            >
-                              {getPlayerName(match.player1)} 勝
-                            </Button>
-                            <Button
-                              size="small"
-                              onClick={() => recordResult(index, match.player2, round)}
-                              type={match.player1Score === 0 ? 'primary' : 'default'}
-                            >
-                              {getPlayerName(match.player2)} 勝
-                            </Button>
-                          </div>
-                        ) : (
-                          <Button
-                            size="small"
-                            onClick={() => recordResult(index, match.player1, round)}
-                            type="primary"
-                          >
-                            {getPlayerName(match.player1)} 輪空勝
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
         </div>
       </div>
     );
@@ -2261,146 +2325,342 @@ const handleFileUpload = (event) => {
     return player ? `${number}. ${player.name}` : `選手${number}`;
   };
 
-  // 渲染選手列表
+  // 勝負紀錄條：每輪一格，顯示勝/負/輪空/進行中/未開始
+  const RecordBar = ({ player }: { player: any }) => (
+    <div className="flex gap-0.5">
+      {Array.from({ length: rounds }).map((_, i) => {
+        const r = player.rounds[i] || {};
+        const isScored = scoredRounds.includes(i + 1);
+        const isCurrent = i + 1 === currentRound;
+        let cls = 'bg-[var(--border-default)]';
+        let label = `R${i + 1} 未開始`;
+        if (isScored && r.score !== null) {
+          if (r.opponent === 0) { cls = 'bg-[var(--accent)]'; label = `R${i + 1} 輪空勝`; }
+          else if (r.score > 0) { cls = 'bg-[var(--win)]'; label = `R${i + 1} 勝 vs #${r.opponent}`; }
+          else { cls = 'bg-[var(--loss)] opacity-60'; label = `R${i + 1} 負 vs #${r.opponent}`; }
+        } else if (isCurrent) {
+          cls = 'bg-[var(--info)] opacity-50'; label = `R${i + 1} 進行中`;
+        }
+        return <span key={i} className={`w-3.5 h-6 rounded-sm ${cls}`} title={label}/>;
+      })}
+    </div>
+  );
+
+  // 緊湊視圖：前三名突顯卡片 + 其他列表
+  const renderCompactStandings = (sortedPlayers: any[]) => {
+    const hasRanking = sortedPlayers.length > 0 && sortedPlayers[0].rank;
+    const top3 = hasRanking && sortByRank ? sortedPlayers.slice(0, 3) : [];
+    const rest = hasRanking && sortByRank ? sortedPlayers.slice(3) : sortedPlayers;
+
+    return (
+      <div className="p-3 space-y-3">
+        {top3.length > 0 && (
+          <div className="space-y-1.5">
+            <div className="text-xs uppercase tracking-wider text-[var(--text-muted)] px-2 font-semibold">領先三隊</div>
+            {top3.map(p => {
+              const accent = p.rank === 1 ? 'border-[oklch(0.82_0.15_90_/_0.5)] bg-[oklch(0.82_0.15_90_/_0.04)]'
+                          : p.rank === 2 ? 'border-[oklch(0.82_0.02_250_/_0.4)]'
+                          : 'border-[oklch(0.70_0.13_55_/_0.4)]';
+              return (
+                <div key={p.number} className={`elevated rounded-lg p-4 border ${accent} flex items-center gap-3`}>
+                  <RankMedal rank={p.rank}/>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      {editMode
+                        ? <input type="text" value={p.name} onChange={e => handlePlayerNameChange(p.number, e.target.value)} className="px-2 h-8 text-base font-semibold flex-1"/>
+                        : <div className="font-bold text-lg truncate">{p.name}</div>
+                      }
+                      <Pill tone="muted" size="sm">#{p.number}</Pill>
+                    </div>
+                    <RecordBar player={p}/>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="font-mono-num text-3xl font-bold text-[var(--text-primary)] leading-none">{p.totalScore}</div>
+                    <div className="text-[10px] text-[var(--text-muted)] mt-1.5 tabular tracking-wide">
+                      輔分 <span className="font-mono-num font-semibold text-[var(--text-secondary)]">{p.auxScore1}</span>
+                      {' · '}
+                      <span className="font-mono-num font-semibold text-[var(--text-secondary)]">{p.auxScore2}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {rest.length > 0 && (
+          <div className="space-y-1">
+            {top3.length > 0 && (
+              <div className="text-xs uppercase tracking-wider text-[var(--text-muted)] px-2 pt-2 font-semibold">其他</div>
+            )}
+            {rest.map(p => (
+              <div key={p.number} className="flex items-center gap-3 px-2 py-2.5 rounded-md hover:bg-[var(--bg-hover)] transition-colors">
+                <span className="font-mono-num text-sm font-semibold text-[var(--text-secondary)] w-7 text-center tabular">{p.rank || '—'}</span>
+                <span className="font-mono-num text-xs text-[var(--text-disabled)] w-7 tabular">#{p.number}</span>
+                <div className="flex-1 min-w-0 flex items-center gap-2">
+                  {editMode
+                    ? <input type="text" value={p.name} onChange={e => handlePlayerNameChange(p.number, e.target.value)} className="px-2 h-8 text-base flex-1"/>
+                    : <div className="text-base font-medium truncate">{p.name}</div>
+                  }
+                </div>
+                <RecordBar player={p}/>
+                <div className="text-right flex-shrink-0 w-16">
+                  <div className="font-mono-num text-lg font-semibold tabular">{p.totalScore}</div>
+                  <div className="text-[10px] text-[var(--text-muted)] tabular">輔 {p.auxScore1}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 詳細視圖：完整表格（保留所有輔分與每輪細節）
+  const renderDetailStandings = (sortedPlayers: any[]) => (
+    <div className="overflow-auto h-full">
+      <table className="grid-table w-full text-sm">
+        <thead className="sticky top-0 z-10">
+          <tr>
+            <th className="text-left px-3 py-3 w-14">名次</th>
+            <th className="text-left px-2 py-3 w-12">#</th>
+            <th className="text-left px-2 py-3 w-40">隊伍</th>
+            <th className="text-center px-2 py-3 w-14 col-total">總分</th>
+            <th className="text-center px-2 py-3 w-14 col-aux">輔一</th>
+            <th className="text-center px-2 py-3 w-14 col-aux">輔二</th>
+            <th className="text-center px-2 py-3 w-14 col-aux">輔三</th>
+            {Array.from({ length: rounds }).map((_, i) => (
+              <th key={i} className={`text-center px-1 py-3 w-20 ${i + 1 === currentRound ? 'text-[var(--accent)]' : ''}`}>R{i + 1}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sortedPlayers.map(p => (
+            <tr key={p.number}>
+              <td className="px-3 py-2.5"><RankMedal rank={p.rank}/></td>
+              <td className="px-2 py-2.5 font-mono-num text-sm text-[var(--text-muted)]">#{p.number}</td>
+              <td className="px-2 py-2.5 max-w-40">
+                {editMode
+                  ? <input type="text" value={p.name} onChange={e => handlePlayerNameChange(p.number, e.target.value)} className="px-2 h-8 text-base w-full"/>
+                  : <span className="font-semibold text-base block truncate" title={p.name}>{p.name}</span>
+                }
+              </td>
+              <td className="px-2 py-2.5 text-center font-mono-num font-bold text-lg tabular col-total">{p.totalScore}</td>
+              <td className="px-2 py-2.5 text-center font-mono-num text-[var(--text-secondary)] tabular col-aux">{p.auxScore1}</td>
+              <td className="px-2 py-2.5 text-center font-mono-num text-[var(--text-secondary)] tabular col-aux">{p.auxScore2}</td>
+              <td className="px-2 py-2.5 text-center font-mono-num text-[var(--text-secondary)] tabular col-aux">{p.auxScore3}</td>
+              {Array.from({ length: rounds }).map((_, i) => {
+                const r = p.rounds[i] || { score: null, opponent: null };
+                const isScored = scoredRounds.includes(i + 1);
+                return (
+                  <td key={i} className="px-1 py-2.5 text-center text-xs">
+                    {isScored && r.score !== null ? (
+                      <div className="flex flex-col items-center">
+                        <span className={`font-mono-num font-bold text-base ${r.score > 0 ? 'text-[var(--win)]' : 'text-[var(--loss)]'}`}>{r.score}</span>
+                        <span className="text-[10px] text-[var(--text-muted)]">{r.opponent === 0 ? '輪空' : `vs ${r.opponent}`}</span>
+                      </div>
+                    ) : <span className="text-[var(--text-disabled)]">·</span>}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  // 排行榜面板（左欄）
   const renderPlayerList = () => {
     const sortedPlayers = getSortedPlayers();
-    
+
     return (
-      <div>
-        <div className="mb-4 relative">
-          <Button
-            onClick={() => setEditMode(!editMode)}
-            type={editMode ? 'primary' : 'default'}
-            className="absolute left-0 top-0"
-          >
-            {editMode ? '完成編輯' : '編輯選手資料'}
-          </Button>
-
-          <div className="text-center font-bold w-full">隊伍列表及成績</div>
-
-          <Button
-            onClick={() => setProjectionMode('standings')}
-            className="absolute right-0 top-0"
-          >
-            🖥 投影名次表
-          </Button>
-        </div>
-        
-        <div className="overflow-x-auto max-h-[calc(100vh-180px)]">
-          <table className="w-full border-separate border-spacing-0 border-t border-l table-fixed min-w-[420px]">
-            <thead>
-              <tr>
-                <th className="border-r border-b p-2 w-10 sticky top-0 left-0 bg-gray-200 z-30">籤號</th>
-                <th className="border-r border-b p-2 w-32 sticky top-0 left-10 bg-gray-200 z-30">隊伍</th>
-                <th className="border-r border-b p-2 w-12 sticky top-0 left-[168px] bg-yellow-100 z-30">名次</th>
-                <th className="border-r border-b p-2 w-12 sticky top-0 left-[216px] bg-red-100 z-30">總分</th>
-                <th className="border-r border-b p-2 w-12 sticky top-0 left-[264px] bg-green-100 z-30">輔分一</th>
-                <th className="border-r border-b p-2 w-12 sticky top-0 left-[312px] bg-green-100 z-30">輔分二</th>
-                <th className="border-r border-r-gray-400 border-b p-2 w-12 sticky top-0 left-[360px] bg-green-100 z-30">輔分三</th>
-                {Array.from({ length: rounds }).map((_, i) => (
-                  <React.Fragment key={i}>
-                    <th className="border-r border-b p-2 w-12 sticky top-0 bg-gray-200 z-20">R{i + 1}</th>
-                    <th className="border-r border-b p-2 w-24 sticky top-0 bg-gray-200 z-20">R{i + 1}對手</th>
-                  </React.Fragment>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortedPlayers.map((player, index) => (
-                <tr key={index} className="group hover:bg-blue-100">
-                  <td className="border-r border-b p-2 text-center sticky left-0 bg-white group-hover:bg-blue-100 z-10">{player.number}</td>
-                  <td className="border-r border-b p-2 sticky left-10 bg-white group-hover:bg-blue-100 z-10">
-                    {editMode ? (
-                      <input
-                        type="text"
-                        className="w-full p-1 border rounded"
-                        value={player.name}
-                        onChange={(e) => handlePlayerNameChange(player.number, e.target.value)}
-                      />
-                    ) : (
-                      player.name
-                    )}
-                  </td>
-                  <td className="border-r border-b p-2 text-center sticky left-[168px] bg-white group-hover:bg-blue-100 z-10">{player.rank}</td>
-                  <td className="border-r border-b p-2 text-center sticky left-[216px] bg-white group-hover:bg-blue-100 z-10">{player.totalScore}</td>
-                  <td className="border-r border-b p-2 text-center sticky left-[264px] bg-white group-hover:bg-blue-100 z-10">{player.auxScore1}</td>
-                  <td className="border-r border-b p-2 text-center sticky left-[312px] bg-white group-hover:bg-blue-100 z-10">{player.auxScore2}</td>
-                  <td className="border-r border-r-gray-400 border-b p-2 text-center sticky left-[360px] bg-white group-hover:bg-blue-100 z-10">{player.auxScore3}</td>
-                  {Array.from({ length: rounds }).map((_, i) => {
-                    const round = player.rounds[i] || { score: null, opponent: null };
-                    return (
-                      <React.Fragment key={i}>
-                        <td className="border-r border-b p-2 text-center">
-                          {round.score !== null ? round.score : ''}
-                        </td>
-                        <td className="border-r border-b p-2 text-center">
-                          {round.opponent ? getPlayerName(round.opponent) : ''}
-                        </td>
-                      </React.Fragment>
-                    );
-                  })}
-                </tr>
+      <div className="surface rounded-xl flex flex-col h-full overflow-hidden">
+        {/* 標題列（窄寬時自動 wrap） */}
+        <div className="flex flex-wrap items-center justify-between px-4 py-2 min-h-14 border-b border-[var(--border-subtle)] flex-shrink-0 gap-x-2 gap-y-2">
+          <div className="flex items-center gap-2.5 flex-shrink-0">
+            <Icon name="trophy" className="w-5 h-5 text-[var(--accent)]"/>
+            <h2 className="text-base font-semibold tracking-wide whitespace-nowrap">排行榜</h2>
+            <span className="text-sm text-[var(--text-muted)] tabular whitespace-nowrap">{players.length} 隊</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {/* 視圖切換 */}
+            <div className="flex bg-[var(--bg-elevated)] rounded-md p-0.5 border border-[var(--border-default)] flex-shrink-0">
+              {[
+                { value: 'compact', icon: 'list' as IconName, label: '緊湊' },
+                { value: 'detail',  icon: 'grid' as IconName, label: '詳細' },
+              ].map(o => (
+                <button key={o.value}
+                  onClick={() => setViewMode(o.value as 'compact' | 'detail')}
+                  className={`px-2 h-6 rounded-[5px] text-[11px] flex items-center gap-1 transition-colors
+                    ${viewMode === o.value
+                      ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}
+                  title={o.label}
+                >
+                  <Icon name={o.icon} className="w-3 h-3"/>
+                </button>
               ))}
-            </tbody>
-          </table>
+            </div>
+            <Button
+              onClick={toggleSortOrder}
+              title={sortByRank ? '目前依名次排序，點擊改為依籤號' : '目前依籤號排序，點擊改為依名次'}
+              className="whitespace-nowrap"
+            >
+              {sortByRank ? '依籤號' : '依名次'}
+            </Button>
+            <Button onClick={() => setEditMode(!editMode)} type={editMode ? 'primary' : undefined} className="whitespace-nowrap">
+              <Icon name="edit" className="w-4 h-4"/> {editMode ? '完成' : '編輯'}
+            </Button>
+            <Button onClick={() => setProjectionMode('standings')} title="投影名次表" className="whitespace-nowrap">
+              <Icon name="monitor" className="w-4 h-4"/> 投影
+            </Button>
+          </div>
+        </div>
+
+        {/* 內容區 */}
+        <div className="flex-1 overflow-auto">
+          {viewMode === 'compact'
+            ? renderCompactStandings(sortedPlayers)
+            : renderDetailStandings(sortedPlayers)}
         </div>
       </div>
     );
   };
 
-  // 渲染分割視窗中的右側面板（桌次選擇器和桌次表）
+  // 桌次表面板（右欄）：輪次切換 tab + 狀態列 + 卡片列表
   const renderRightPane = () => {
     const roundOptions = Object.keys(matchesByRound).map(round => parseInt(round, 10)).sort((a, b) => a - b);
+    const matchesForRound = matchesByRound[selectedRound] || [];
+    const isLocked = scoredRounds.includes(selectedRound);
+    const isCurrent = selectedRound === currentRound;
+    const total = matchesForRound.length;
+    const completed = matchesForRound.filter((m: any) => m.player1Score !== undefined || m.player2 === 0).length;
 
     return (
-      <div className="p-2">
-        {roundOptions.length > 0 ? (
-          <>
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="font-bold text-sm text-gray-700">桌次表</div>
-                <button
-                  onClick={() => setProjectionMode('tables')}
-                  className="px-2 py-0.5 text-xs rounded bg-gray-200 text-gray-800 hover:bg-gray-300 font-medium"
-                  title="投影桌次表到大螢幕（ESC 關閉）"
-                >
-                  🖥 投影
-                </button>
+      <div className="surface rounded-xl flex flex-col h-full overflow-hidden">
+        {/* 標題列：輪次切換 + 操作（窄寬時自動 wrap） */}
+        <div className="flex flex-wrap items-center justify-between px-4 py-2 min-h-14 border-b border-[var(--border-subtle)] flex-shrink-0 gap-x-2 gap-y-2">
+          <div className="flex items-center gap-2.5 flex-shrink-0">
+            <Icon name="grid" className="w-5 h-5 text-[var(--accent)] flex-shrink-0"/>
+            <h2 className="text-base font-semibold tracking-wide whitespace-nowrap">桌次表</h2>
+            {total > 0 && (
+              <span className="text-sm text-[var(--text-muted)] tabular whitespace-nowrap">{completed}/{total} 桌完成</span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {roundOptions.length > 0 && (
+              <div className="flex bg-[var(--bg-elevated)] rounded-md p-0.5 border border-[var(--border-default)] flex-shrink-0">
+                {roundOptions.map(r => {
+                  const done = scoredRounds.includes(r);
+                  const cur = r === currentRound;
+                  const sel = r === selectedRound;
+                  return (
+                    <button key={r}
+                      onClick={() => setSelectedRound(r)}
+                      className={`px-3 h-8 rounded-[5px] text-sm flex items-center gap-1 transition-colors font-medium whitespace-nowrap
+                        ${sel
+                          ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-inner'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}
+                    >
+                      R{r}
+                      {done && <Icon name="check" className="w-3.5 h-3.5 text-[var(--win)]" strokeWidth={3}/>}
+                      {cur && !done && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]"/>}
+                    </button>
+                  );
+                })}
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">輪次：</span>
-                <select
-                  value={selectedRound}
-                  onChange={(e) => setSelectedRound(parseInt(e.target.value, 10))}
-                  className="p-1 border rounded text-sm"
-                  style={{ width: '130px' }}
+            )}
+            {!isLocked && total > 0 && (
+              <>
+                <Button
+                  onClick={() => setPairingEditMode(!pairingEditMode)}
+                  type={pairingEditMode ? 'primary' : undefined}
+                  title="修改配對：把任一方換成其他選手（會清掉該桌結果）"
+                  className="whitespace-nowrap"
                 >
-                  {roundOptions.map(round => {
-                    const isScored = scoredRounds.includes(round);
-                    const isCurrent = round === currentRound;
-                    const label = isScored
-                      ? `第 ${round} 輪 ✓`
-                      : isCurrent
-                        ? `第 ${round} 輪 ▶`
-                        : `第 ${round} 輪`;
-                    return (
-                      <option key={round} value={round}>{label}</option>
-                    );
-                  })}
-                </select>
-              </div>
+                  <Icon name="edit" className="w-4 h-4"/> {pairingEditMode ? '完成修改' : '修改配對'}
+                </Button>
+                <Button onClick={() => validatePairings(selectedRound)} title="檢查本輪配對" className="whitespace-nowrap">
+                  <Icon name="search" className="w-4 h-4"/> 驗證配對
+                </Button>
+              </>
+            )}
+            <Button onClick={() => setProjectionMode('tables')} disabled={total === 0} title="投影桌次表" className="whitespace-nowrap">
+              <Icon name="monitor" className="w-4 h-4"/> 投影
+            </Button>
+          </div>
+        </div>
+
+        {/* 狀態列 */}
+        {total > 0 && (
+          <div className={`px-4 py-2.5 text-sm border-b border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-x-3 gap-y-1 flex-shrink-0
+            ${isLocked
+              ? 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'
+              : isCurrent
+                ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
+                : 'bg-transparent text-[var(--text-secondary)]'}`}>
+            <div className="flex items-center gap-2">
+              {isLocked ? (
+                <><Icon name="lock" className="w-4 h-4"/> R{selectedRound} 已鎖定 — 結果不可更改</>
+              ) : isCurrent ? (
+                <><span className="w-2 h-2 bg-[var(--accent)] rounded-full pulse"/> R{selectedRound} 進行中 — 點擊勝方登錄結果</>
+              ) : (
+                <>R{selectedRound} 未開始</>
+              )}
             </div>
-            {generateTableView(matchesByRound[selectedRound], selectedRound)}
-          </>
-        ) : (
-          <div className="flex items-center justify-center h-full min-h-32">
-            <div className="text-center p-8 text-gray-400">
-              <div className="text-4xl mb-3">📋</div>
-              <div className="text-sm">尚未生成桌次表</div>
-              <div className="text-xs mt-1">請設定當前輪次後點擊「抓對」</div>
-            </div>
+            {isLocked ? (
+              <button
+                onClick={() => unlockRound(selectedRound)}
+                className="px-2.5 h-7 rounded text-xs flex items-center gap-1 border border-[var(--border-default)] hover:border-[oklch(0.65_0.16_70)] hover:text-[oklch(0.55_0.16_70)] transition-colors"
+                title="解除鎖定後可重新登錄結果，需再次按「算分」"
+              >
+                <Icon name="unlock" className="w-3.5 h-3.5"/> 解除鎖定
+              </button>
+            ) : completed === total && total > 0 && (
+              <span className="text-[var(--win)] flex items-center gap-1">
+                <Icon name="check" className="w-4 h-4" strokeWidth={3}/> 所有結果已登錄，可以算分
+              </span>
+            )}
           </div>
         )}
+
+        {/* 配對驗證結果（沿用現有 pairingValidation 狀態） */}
+        {pairingValidation && pairingValidation.round === selectedRound && (
+          <div className={`mx-3 mt-3 px-3 py-2 rounded-md text-sm border flex items-start gap-2
+            ${pairingValidation.errors.length === 0
+              ? 'bg-[var(--win-soft)] border-[oklch(0.55_0.16_150_/_0.3)] text-[var(--win)]'
+              : 'bg-[var(--loss-soft)] border-[oklch(0.55_0.16_25_/_0.3)] text-[var(--loss)]'}`}>
+            <Icon name={pairingValidation.errors.length === 0 ? 'check' : 'alert'} className="w-4 h-4 flex-shrink-0 mt-0.5" strokeWidth={pairingValidation.errors.length === 0 ? 3 : 2}/>
+            <div className="flex-1">
+              {pairingValidation.errors.length === 0 ? (
+                <span>配對無誤，可以開始比賽。</span>
+              ) : (
+                <>
+                  <div className="font-semibold mb-1">發現以下問題：</div>
+                  {pairingValidation.errors.map((e, i) => <div key={i}>• {e}</div>)}
+                </>
+              )}
+            </div>
+            <button onClick={() => setPairingValidation(null)} className="text-xs underline opacity-70 flex-shrink-0">關閉</button>
+          </div>
+        )}
+
+        {/* 卡片列表 */}
+        <div className="flex-1 overflow-auto p-3 space-y-2">
+          {total === 0 ? (
+            <div className="h-full flex items-center justify-center">
+              <div className="text-center text-[var(--text-muted)]">
+                <Icon name="grid" className="w-12 h-12 mx-auto mb-3 opacity-30"/>
+                <div className="text-base">尚未生成桌次表</div>
+                <div className="text-sm mt-1 opacity-70">請設定當前輪次後點擊「抓對」</div>
+              </div>
+            </div>
+          ) : (
+            matchesForRound.map((m: any, idx: number) => (
+              <MatchCard key={idx} match={m} matchIndex={idx} isLocked={isLocked} round={selectedRound}/>
+            ))
+          )}
+        </div>
       </div>
     );
   };
@@ -2426,118 +2686,132 @@ const handleFileUpload = (event) => {
     return `第${numText}名優勝`;
   };
 
-  // 桌次表投影視圖：依桌數自動分欄、黃色底色、輪空獨立呈現
+  // 桌次表投影視圖：proj-bg 底 + 置中分欄 + 奇偶桌分色卡片
   const renderTablesProjection = () => {
     const matchesForRound = matchesByRound[selectedRound] || [];
     const total = matchesForRound.length;
-    const cols = Math.min(4, Math.max(1, Math.ceil(total / 5)));
-    const tablesPerCol = Math.ceil(total / cols) || 1;
-    const chunks: any[][] = [];
-    for (let i = 0; i < cols; i++) {
-      chunks.push(matchesForRound.slice(i * tablesPerCol, (i + 1) * tablesPerCol));
-    }
     const nameOf = (num: number) => players.find(p => p.number === num)?.name || '';
 
     return (
-      <div className="flex-1 flex flex-col items-center p-8 overflow-auto">
-        <h1 className="text-5xl font-bold mb-6 text-gray-800">
-          {gameTitle}　第 {selectedRound} 輪 桌次表
-        </h1>
+      <div className="flex-1 flex flex-col items-center p-8 overflow-hidden min-h-0">
+        <div className="text-center mb-6 flex-shrink-0">
+          <div className="text-[10px] tracking-[0.4em] text-[var(--accent)] font-medium mb-2">WGP TOURNAMENT</div>
+          <h1 className="text-5xl font-bold tracking-tight">{gameTitle}</h1>
+          <div className="mt-2 text-2xl text-[var(--text-secondary)] tracking-wide">第 {selectedRound} 輪 · 桌次表</div>
+          <div className="mt-3 mx-auto w-20 h-[2px] bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent"></div>
+        </div>
         {total === 0 ? (
-          <div className="text-2xl text-gray-400 mt-12">尚未生成桌次表</div>
+          <div className="flex-1 flex items-center justify-center text-3xl text-[var(--text-muted)]">尚未生成桌次表</div>
         ) : (
-          <div className="flex gap-6 items-start text-3xl">
-            {chunks.map((chunk, ci) => (
-              <table key={ci} className="border-collapse">
-                <thead>
-                  <tr className="bg-gray-300">
-                    <th className="border-2 border-black px-5 py-2 w-24">桌號</th>
-                    <th className="border-2 border-black px-5 py-2 w-24">籤號</th>
-                    <th className="border-2 border-black px-5 py-2 min-w-[10em]">隊名</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {chunk.map((m, mi) => {
-                    const isBye = m.player2 === 0;
-                    if (isBye) {
-                      return (
-                        <tr key={mi} className="bg-orange-100">
-                          <td className="border-2 border-black px-5 py-2 text-center text-gray-400">—</td>
-                          <td className="border-2 border-black px-5 py-2 text-center font-bold">{m.player1}</td>
-                          <td className="border-2 border-black px-5 py-2">
-                            {nameOf(m.player1)}
-                            <span className="ml-3 px-2 py-0.5 bg-red-500 text-white text-xl rounded align-middle">輪空</span>
-                          </td>
-                        </tr>
-                      );
-                    }
-                    // 依桌次奇偶分色：奇數桌（1, 3, 5...）黃色、偶數桌（2, 4, 6...）藍色
-                    const rowBg = m.table % 2 === 1 ? 'bg-yellow-100' : 'bg-blue-100';
-                    return (
-                      <React.Fragment key={mi}>
-                        <tr className={rowBg}>
-                          <td
-                            rowSpan={2}
-                            className={`border-2 border-black px-5 py-2 text-center font-extrabold text-5xl align-middle ${rowBg}`}
-                          >
-                            {m.table}
-                          </td>
-                          <td className="border-2 border-black px-5 py-2 text-center font-bold">{m.player1}</td>
-                          <td className="border-2 border-black px-5 py-2">{nameOf(m.player1)}</td>
-                        </tr>
-                        <tr className={rowBg}>
-                          <td className="border-2 border-black px-5 py-2 text-center font-bold">{m.player2}</td>
-                          <td className="border-2 border-black px-5 py-2">{nameOf(m.player2)}</td>
-                        </tr>
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            ))}
+          <div className="flex-1 w-full flex flex-col flex-wrap content-center justify-center items-center gap-x-6 gap-y-3 min-h-0 overflow-hidden">
+            {matchesForRound.map((m: any, mi: number) => {
+              const isBye = m.player2 === 0;
+              const isOdd = m.table % 2 === 1;
+              const cardBg = isOdd
+                ? 'bg-gradient-to-br from-[oklch(0.97_0.04_85)] to-[oklch(0.93_0.08_85)]'   /* 奇數桌：暖黃漸層 */
+                : 'bg-gradient-to-br from-[oklch(0.97_0.03_230)] to-[oklch(0.92_0.06_230)]'; /* 偶數桌：冷藍漸層 */
+              const shadowTint = isOdd
+                ? '0 6px 20px -8px oklch(0.70 0.14 85 / 0.35)'
+                : '0 6px 20px -8px oklch(0.60 0.12 230 / 0.30)';
+              if (isBye) {
+                return (
+                  <div
+                    key={mi}
+                    className={`rounded-2xl px-5 py-3 flex items-center gap-4 w-[28rem] border border-white/40 ${cardBg}`}
+                    style={{ boxShadow: shadowTint }}
+                  >
+                    <div className="w-14 h-14 rounded-full bg-white/70 flex items-center justify-center flex-shrink-0 border-2 border-dashed border-[var(--text-muted)]/50">
+                      <span className="text-3xl text-[var(--text-muted)] leading-none">—</span>
+                    </div>
+                    <span className="font-mono-num text-lg text-[var(--text-muted)] tabular flex-shrink-0">#{m.player1}</span>
+                    <span className="text-2xl font-bold truncate flex-1 text-[var(--text-secondary)]">{nameOf(m.player1)}</span>
+                    <Pill tone="accent" size="md">輪空</Pill>
+                  </div>
+                );
+              }
+              return (
+                <div
+                  key={mi}
+                  className={`rounded-2xl px-5 py-3 flex items-center gap-4 w-[30rem] border border-white/40 ${cardBg}`}
+                  style={{ boxShadow: shadowTint }}
+                >
+                  <div className="w-14 h-14 rounded-full bg-white/70 flex flex-col items-center justify-center flex-shrink-0 border-2 border-[var(--accent)]/40">
+                    <div className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] leading-none mb-0.5">桌</div>
+                    <div className="font-mono-num text-2xl font-bold text-[var(--accent)] leading-none">{m.table}</div>
+                  </div>
+                  <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono-num text-base text-[var(--text-muted)] tabular flex-shrink-0">#{m.player1}</span>
+                      <span className="text-2xl font-bold truncate">{nameOf(m.player1)}</span>
+                    </div>
+                    <div className="text-[10px] tracking-[0.3em] text-[var(--text-muted)] font-mono-num font-bold px-2 py-1 rounded-md bg-white/50">VS</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono-num text-base text-[var(--text-muted)] tabular flex-shrink-0">#{m.player2}</span>
+                      <span className="text-2xl font-bold truncate">{nameOf(m.player2)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
     );
   };
 
-  // 名次表投影視圖：粉色底色、單欄、依名次排序
+  // 名次表投影視圖：突顯冠亞季軍漸層卡片 + 獎盃
   const renderStandingsProjection = () => {
     const sorted = [...players].sort((a, b) => (a.rank || 9999) - (b.rank || 9999));
     const limit = standingsTopN ?? sorted.length;
     const display = sorted.slice(0, limit);
+    const labels = ['冠軍', '亞軍', '季軍', '殿軍'];
+
     return (
-      <div className="flex-1 flex flex-col items-center p-8 overflow-auto">
-        <table className="border-collapse text-3xl bg-white">
-          <thead>
-            <tr>
-              <th colSpan={3} className="border-2 border-black px-8 py-4 bg-pink-100 text-center">
-                <input
-                  type="text"
-                  value={projectionTitle}
-                  onChange={(e) => setProjectionTitle(e.target.value)}
-                  placeholder={gameTitle}
-                  title="點擊可修改競賽名稱"
-                  className="w-full text-center text-4xl font-bold bg-transparent border border-transparent rounded px-2 py-1 hover:border-pink-300 focus:border-pink-400 focus:bg-white focus:outline-none"
-                />
-              </th>
-            </tr>
-            <tr className="bg-gray-200">
-              <th className="border-2 border-black px-6 py-2 min-w-[8em]">名次</th>
-              <th className="border-2 border-black px-6 py-2 min-w-[5em]">籤號</th>
-              <th className="border-2 border-black px-6 py-2 min-w-[12em]">隊名</th>
-            </tr>
-          </thead>
-          <tbody>
-            {display.map((p, i) => (
-              <tr key={p.number} className={i % 2 === 0 ? 'bg-pink-50' : 'bg-white'}>
-                <td className="border-2 border-black px-6 py-2 font-bold">{getRankLabel(p.rank)}</td>
-                <td className="border-2 border-black px-6 py-2 text-center font-bold">{p.number}</td>
-                <td className="border-2 border-black px-6 py-2">{p.name}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex-1 flex flex-col items-center justify-start py-16 px-12 overflow-auto standings-stage">
+        <div className="mb-10 text-center">
+          <div className="text-[10px] tracking-[0.4em] text-[var(--accent)] font-medium mb-3">FINAL STANDINGS</div>
+          <input
+            type="text"
+            value={projectionTitle}
+            onChange={(e) => setProjectionTitle(e.target.value)}
+            placeholder={gameTitle}
+            title="點擊可修改競賽名稱"
+            className="text-6xl font-bold tracking-tight bg-transparent border-none text-center hover:bg-[var(--bg-elevated)] focus:bg-[var(--bg-elevated)] rounded-lg px-4 py-2 transition-colors"
+          />
+        </div>
+
+        <div className="w-full max-w-4xl space-y-2">
+          {display.map((p) => {
+            const isTop3 = (p.rank || 99) <= 3;
+            const cardClass =
+              p.rank === 1 ? 'bg-gradient-to-r from-[oklch(0.78_0.14_85_/_0.20)] to-transparent border-[oklch(0.70_0.15_85_/_0.45)]' :
+              p.rank === 2 ? 'bg-gradient-to-r from-[oklch(0.85_0.02_250_/_0.30)] to-transparent border-[oklch(0.70_0.02_250_/_0.40)]' :
+              p.rank === 3 ? 'bg-gradient-to-r from-[oklch(0.72_0.13_45_/_0.15)] to-transparent border-[oklch(0.58_0.13_45_/_0.40)]' :
+              'elevated';
+            return (
+              <div key={p.number} className={`flex items-center gap-6 p-5 rounded-xl border ${cardClass}`}>
+                <div className="flex flex-col items-center w-24 flex-shrink-0">
+                  {isTop3 && (
+                    <Icon
+                      name={p.rank === 1 ? 'crown' : 'trophy'}
+                      className={`w-8 h-8 mb-1 ${p.rank === 1 ? 'text-[oklch(0.65_0.15_85)]' : p.rank === 2 ? 'text-[oklch(0.55_0.02_250)]' : 'text-[oklch(0.58_0.13_45)]'}`}
+                    />
+                  )}
+                  <div className={`font-mono-num font-bold tabular leading-none ${isTop3 ? 'text-3xl' : 'text-2xl text-[var(--text-secondary)]'}`}>{p.rank || '—'}</div>
+                  {p.rank && p.rank <= 4 && <div className="text-xs text-[var(--text-muted)] mt-1">{labels[p.rank - 1]}</div>}
+                </div>
+                <Pill tone="muted" size="md">#{p.number}</Pill>
+                <div className="flex-1 min-w-0">
+                  <div className={`font-bold truncate ${isTop3 ? 'text-5xl' : 'text-4xl'}`}>{p.name}</div>
+                </div>
+                <div className="text-right">
+                  <div className={`font-mono-num font-bold tabular ${isTop3 ? 'text-6xl' : 'text-5xl'}`}>{p.totalScore}</div>
+                  <div className="text-sm text-[var(--text-muted)] mt-1 tabular">輔分 {p.auxScore1} / {p.auxScore2}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   };
@@ -2553,407 +2827,405 @@ const handleFileUpload = (event) => {
   };
 
   return (
-    <div className="p-2 max-w-full h-screen flex flex-col">
-      <Card className="mb-2 py-1">
-        {/* 標題列 */}
-        <div className="flex justify-between items-center mb-1">
-          <div className="flex items-center gap-2">
-            <Title level={3} className="mb-0">WGP比賽管理系統</Title>
+    <div className="h-screen flex flex-col p-3 gap-3">
+      {/* ─── Header（可摺疊） ─────────────────────────────── */}
+      {(() => {
+        const existingRounds = Object.keys(matchesByRound).map(r => parseInt(r, 10));
+        const isCurrentScored = scoredRounds.includes(currentRound);
+        const isCurrentPaired = existingRounds.includes(currentRound);
+        const allDone = scoredRounds.length >= rounds;
+        // 初次使用 / 全新空白狀態：尚未上傳名單、尚未抓對、尚未算分
+        const isInitialState =
+          players.length > 0 &&
+          players.every(p => p.name === `隊伍${p.number}`) &&
+          existingRounds.length === 0 &&
+          scoredRounds.length === 0;
+
+        type Stage = { msg: string; tone: 'win' | 'warn' | 'info'; step: number; icon: IconName };
+        let stage: Stage;
+        if (allDone) {
+          stage = { msg: `所有 ${rounds} 輪賽事均已完成`, tone: 'win', step: 4, icon: 'trophy' };
+        } else if (isCurrentScored) {
+          stage = { msg: `第 ${currentRound} 輪已算分。將「當前輪次」改為 ${currentRound + 1}，並按「抓對」開始下一輪。`, tone: 'win', step: 3, icon: 'check' };
+        } else if (isPairingButtonDisabled || isCurrentPaired) {
+          stage = { msg: `第 ${currentRound} 輪桌次已生成。請在右側登錄各場結果，完成後點擊「算分」。`, tone: 'warn', step: 2, icon: 'play' };
+        } else {
+          stage = { msg: `準備第 ${currentRound} 輪：${currentRound === 1 ? '可先「抽籤」再' : ''}點擊「抓對」生成本輪桌次。`, tone: 'info', step: 1, icon: 'arrow_right' };
+        }
+        const stageBg =
+          stage.tone === 'win'  ? 'bg-[var(--win-soft)] text-[var(--win)]' :
+          stage.tone === 'warn' ? 'bg-[var(--warn-soft)] text-[var(--warn)]' :
+                                   'bg-[var(--info-soft)] text-[var(--info)]';
+
+        const compactActions = (
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
-              onClick={() => setShowAuxScoreHelp(true)}
-              className="px-2 py-0.5 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-200"
+              onClick={handleDrawLots}
+              disabled={currentRound !== 1}
+              className="btn-ghost px-3 h-9 rounded-md text-sm flex items-center gap-1.5"
+              title={currentRound !== 1 ? '僅第 1 輪可抽籤' : '抽籤'}
             >
-              輔分說明
+              <Icon name="dice" className="w-4 h-4"/> 抽籤
             </button>
             <button
-              onClick={() => setShowAboutInfo(true)}
-              className="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300"
+              onClick={generatePairings}
+              disabled={isPairingButtonDisabled}
+              className="btn-primary px-4 h-9 rounded-md text-sm flex items-center gap-1.5"
             >
-              關於
+              <Icon name="swap" className="w-4 h-4"/> 抓對 R{currentRound}
+            </button>
+            <button
+              onClick={calculateScores}
+              disabled={!isPairingButtonDisabled}
+              className={`px-4 h-9 rounded-md text-sm flex items-center gap-1.5 font-medium
+                ${isPairingButtonDisabled ? 'btn-success' : 'btn-ghost opacity-50 cursor-not-allowed'}`}
+            >
+              <Icon name="calculator" className="w-4 h-4"/> 算分
             </button>
           </div>
-          <span className="text-xs text-gray-400">💾 系統會自動保存狀態</span>
-        </div>
-        <Divider className="my-1" />
+        );
 
-        {/* 賽事設定列 */}
-        <div className="flex flex-wrap gap-x-4 gap-y-1 mb-1 items-center">
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500 whitespace-nowrap">賽制</span>
-            <span className="text-xs font-medium text-gray-700 px-2 py-1 bg-gray-100 rounded border border-gray-200">瑞士制</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500 whitespace-nowrap">比賽項目</span>
-            <Select value={gameTitle} onChange={setGameTitle} style={{ width: '150px' }}>
-              <Option value="WGP">WGP GiveMe5</Option>
-            </Select>
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500 whitespace-nowrap">參賽隊伍</span>
-            <InputNumber min={2} value={allPlayers} onChange={setAllPlayers} style={{ width: '60px' }} />
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500 whitespace-nowrap">輪數</span>
-            <InputNumber min={1} value={rounds} onChange={setRounds} style={{ width: '55px' }} />
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500 whitespace-nowrap">勝方得分</span>
-            <InputNumber min={1} value={winPoint} onChange={setWinPoint} style={{ width: '55px' }} />
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500 whitespace-nowrap">當前輪次</span>
-            <InputNumber min={1} max={rounds} value={currentRound} onChange={setCurrentRound} style={{ width: '55px' }} />
-          </div>
-          {/* 輪次進度小標籤 */}
-          <div className="flex items-center gap-1 ml-2">
-            {Array.from({ length: rounds }, (_, i) => i + 1).map(r => (
-              <span
-                key={r}
-                className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold border ${
-                  scoredRounds.includes(r)
-                    ? 'bg-gray-500 text-white border-gray-500'
-                    : r === currentRound
-                      ? 'bg-blue-500 text-white border-blue-500'
-                      : 'bg-white text-gray-400 border-gray-300'
-                }`}
-                title={scoredRounds.includes(r) ? `第${r}輪 已完成` : r === currentRound ? `第${r}輪 進行中` : `第${r}輪 未開始`}
-              >
-                {scoredRounds.includes(r) ? '✓' : r}
-              </span>
-            ))}
-          </div>
-
-          {/* 流程引導提示（接在 12345 後面，視窗窄時自動 wrap） */}
-          {(() => {
-            const existingRounds = Object.keys(matchesByRound).map(r => parseInt(r, 10));
-            const isCurrentScored = scoredRounds.includes(currentRound);
-            const isCurrentPaired = existingRounds.includes(currentRound);
-            const allDone = scoredRounds.length >= rounds;
-
-            let msg = '';
-            let style = 'bg-blue-50 border-blue-200 text-blue-800';
-            if (allDone) {
-              msg = `🏆 所有 ${rounds} 輪賽事均已完成！可下載最終成績。`;
-              style = 'bg-green-50 border-green-300 text-green-800';
-            } else if (isCurrentScored) {
-              msg = `✅ 第 ${currentRound} 輪已完成。請將「當前輪次」改為 ${currentRound + 1}，然後點擊「抓對」。`;
-              style = 'bg-green-50 border-green-300 text-green-800';
-            } else if (isPairingButtonDisabled) {
-              msg = `▶ 第 ${currentRound} 輪桌次已生成。請在右側登錄各場結果，完成後點擊「算分」。`;
-              style = 'bg-amber-50 border-amber-300 text-amber-800';
-            } else if (isCurrentPaired) {
-              msg = `⚠ 第 ${currentRound} 輪已有桌次但尚未算分，請確認所有結果後點擊「算分」。`;
-              style = 'bg-orange-50 border-orange-300 text-orange-800';
-            } else {
-              msg = `➡ 準備第 ${currentRound} 輪：${currentRound === 1 ? '可先「抽籤」調整籤號順序，再' : ''}點擊「抓對」生成本輪桌次。`;
-            }
-            return (
-              <div className={`px-2 py-0.5 ml-2 rounded border text-sm font-medium ${style}`}>
-                {msg}
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* 次要操作按鈕（設定列正下方） */}
-        <div className="flex flex-wrap gap-1.5 items-center mb-1">
-          <button
-            onClick={resetSystem}
-            className="px-3 py-1 rounded text-xs bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
-          >
-            ♻ 重設
-          </button>
-          <label className="px-3 py-1 rounded text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 cursor-pointer">
-            📥 上傳隊伍表
-            <input type="file" className="hidden" onChange={handleFileUpload} onClick={(e) => { (e.target as HTMLInputElement).value = ''; }} accept=".xlsx,.xls" />
-          </label>
-          <button
-            onClick={() => setShowImportExport(v => !v)}
-            className={`px-3 py-1 rounded text-xs border border-dashed flex items-center gap-1.5 ${
-              showImportExport
-                ? 'bg-indigo-100 text-indigo-800 border-indigo-400'
-                : 'bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100'
-            }`}
-            aria-expanded={showImportExport}
-          >
-            <span
-              className="text-sm leading-none transition-transform inline-block"
-              style={{ transform: showImportExport ? 'rotate(0deg)' : 'rotate(-90deg)' }}
-              aria-hidden="true"
-            >
-              ▼
-            </span>
-            <span>匯入/匯出（隊伍表範例、狀態備份）</span>
-          </button>
-        </div>
-
-        {showImportExport && (
-          <div className="mb-1 p-2 rounded border border-gray-200 bg-gray-50 text-xs">
-            {/* Excel 下載 / 範例 */}
-            <div className="mb-2">
-              <div className="font-semibold text-gray-700 mb-1">Excel 下載 / 範例</div>
-              <div className="flex flex-wrap gap-1.5 items-center mb-1">
-                <button
-                  onClick={exportPlayersToExcel}
-                  className="px-3 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
-                >
-                  📤 下載選手成績
-                </button>
-                <button
-                  onClick={exportMatchesToExcel}
-                  className="px-3 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
-                >
-                  📤 下載桌次表
-                </button>
-                <button
-                  onClick={downloadSampleTeamList}
-                  className="px-3 py-1 rounded bg-white text-gray-700 hover:bg-gray-100 border border-gray-300"
-                >
-                  📋 下載隊伍表範例
-                </button>
-              </div>
-              <div className="text-gray-600 leading-relaxed">
-                <div className="mb-0.5">
-                  <span className="font-semibold">隊伍表必填欄位：</span>
-                  <span className="ml-1"><code className="bg-white px-1 rounded border">籤號</code>（數字，從 1 開始）</span>
-                  <span className="mx-1">、</span>
-                  <span><code className="bg-white px-1 rounded border">隊伍</code>（文字）</span>
+        return (
+          <div className="surface rounded-xl flex-shrink-0">
+            {/* 頂部品牌列 */}
+            <div className="flex items-center justify-between px-4 h-12 border-b border-[var(--border-subtle)]">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-md bg-gradient-to-br from-[var(--accent)] to-[oklch(0.55_0.17_30)] flex items-center justify-center flex-shrink-0">
+                    <Icon name="trophy" className="w-4 h-4 text-white" strokeWidth={2.5}/>
+                  </div>
+                  <div className="leading-tight min-w-0">
+                    <div className="text-base font-semibold tracking-wide truncate">WGP TOURNAMENT</div>
+                    <div className="text-xs text-[var(--text-muted)] tabular truncate">{gameTitle} · {allPlayers} 隊 · {rounds} 輪</div>
+                  </div>
                 </div>
-                <div className="text-gray-500">
-                  欄位名稱可使用同義字（如「籤號／編號／號碼／No」、「隊伍／隊名／團隊／名稱」）。第一列為標題，其後每列一隊。
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* 輪次燈號（可點切換當前輪次） */}
+                <div className="flex items-center gap-1 mr-2">
+                  {Array.from({ length: rounds }, (_, i) => i + 1).map(r => {
+                    const done = scoredRounds.includes(r);
+                    const cur = r === currentRound;
+                    return (
+                      <div key={r} className="flex items-center">
+                        <button
+                          onClick={() => setCurrentRound(r)}
+                          className={`step-dot inline-flex items-center justify-center font-mono-num text-[11px] font-semibold rounded-full w-6 h-6 transition-all hover:scale-110
+                            ${done ? 'bg-[var(--win)] text-white hover:brightness-110' :
+                              cur ? 'bg-[var(--accent)] text-white pulse' :
+                                    'bg-transparent text-[var(--text-muted)] border border-[var(--border-default)] hover:border-[var(--accent)] hover:text-[var(--accent)]'}`}
+                          title={`切換當前輪次到 R${r}${done ? '（已完成）' : cur ? '（進行中）' : ''}`}
+                        >
+                          {done ? <Icon name="check" className="w-3 h-3" strokeWidth={3}/> : r}
+                        </button>
+                        {r < rounds && <span className={`w-2 h-px ${done ? 'bg-[var(--win)]' : 'bg-[var(--border-default)]'}`}/>}
+                      </div>
+                    );
+                  })}
                 </div>
+
+                <button onClick={() => setShowAuxScoreHelp(true)} className="btn-ghost px-3 h-8 rounded-md text-sm flex items-center gap-1.5">
+                  <Icon name="help" className="w-4 h-4"/> 輔分說明
+                </button>
+                <button onClick={() => setShowAboutInfo(true)} className="btn-ghost px-3 h-8 rounded-md text-sm flex items-center gap-1.5">
+                  <Icon name="info" className="w-4 h-4"/> 關於
+                </button>
+                <button
+                  onClick={() => setHeaderCollapsed(!headerCollapsed)}
+                  className="btn-ghost px-3 h-8 rounded-md text-sm flex items-center gap-1.5"
+                  title={headerCollapsed ? '展開設定' : '摺疊設定'}
+                >
+                  <Icon name={headerCollapsed ? 'chevronDown' : 'chevronUp'} className="w-3.5 h-3.5"/>
+                  {headerCollapsed ? '展開' : '摺疊'}
+                </button>
               </div>
             </div>
 
-            {/* 狀態備份 */}
-            <div>
-              <div className="font-semibold text-gray-700 mb-1">狀態備份</div>
-              <div className="flex flex-wrap gap-1.5 items-center mb-1">
-                <label className="px-3 py-1 rounded bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 cursor-pointer">
-                  📂 上傳狀態
-                  <input type="file" className="hidden" onChange={importStateFromJSON} onClick={(e) => { (e.target as HTMLInputElement).value = ''; }} accept=".json" />
-                </label>
-                <button
-                  onClick={exportStateToJSON}
-                  className="px-3 py-1 rounded bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200"
-                >
-                  💾 下載狀態
-                </button>
+            {/* 初次使用引導橫幅（任何時候都顯示） */}
+            {isInitialState && (
+              <div className="px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--win-soft)] flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 flex-1 min-w-0 text-[var(--win)]">
+                  <Icon name="sparkle" className="w-5 h-5 flex-shrink-0"/>
+                  <div className="text-sm">
+                    <span className="font-semibold">歡迎使用！</span>
+                    <span className="ml-2 opacity-90">
+                      請先上傳隊伍表 Excel（或下載範例），即可開始比賽配對。
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <label className="btn-success inline-flex items-center justify-center gap-1.5 rounded-md px-4 h-9 text-sm cursor-pointer whitespace-nowrap">
+                    <Icon name="upload" className="w-4 h-4"/> 上傳隊伍表
+                    <input type="file" className="hidden" onChange={handleFileUpload} onClick={e => { (e.target as HTMLInputElement).value = ''; }} accept=".xlsx,.xls"/>
+                  </label>
+                  <button
+                    onClick={downloadSampleTeamList}
+                    className="btn-ghost inline-flex items-center justify-center gap-1.5 rounded-md px-3 h-9 text-sm whitespace-nowrap border-[var(--win)] text-[var(--win)] hover:bg-[var(--win-soft)]"
+                  >
+                    <Icon name="download" className="w-4 h-4"/> 下載範例
+                  </button>
+                </div>
               </div>
-              <div className="text-gray-500">
-                把目前所有資料（隊伍、輪次、分數）打包為 JSON 檔，可匯出備份或在另一台電腦上「上傳狀態」還原。
+            )}
+
+            {/* 摺疊狀態：只顯示流程提示 + 主動作 */}
+            {headerCollapsed ? (
+              <div className="flex items-center gap-3 px-4 py-2.5">
+                <div className={`flex items-center gap-2 flex-1 min-w-0 px-3 py-2 rounded-md text-sm ${stageBg}`}>
+                  <Icon name={stage.icon} className="w-4 h-4 flex-shrink-0"/>
+                  <span className="truncate">{stage.msg}</span>
+                </div>
+                {compactActions}
               </div>
-            </div>
+            ) : (
+              <div className="px-4 py-3 space-y-3">
+                {/* 設定列：grid 排版 */}
+                <div className="grid grid-cols-12 gap-3">
+                  <Field label="賽制" col={2}><Static>瑞士制</Static></Field>
+                  <Field label="比賽項目" col={3}><Static>{gameTitle}</Static></Field>
+                  <Field label="參賽隊伍" col={2}>
+                    <input type="number" min={2} value={allPlayers} onChange={e => setAllPlayers(parseInt(e.target.value) || 2)} className="w-full px-2 h-9 text-base font-mono-num"/>
+                  </Field>
+                  <Field label="輪數" col={2}>
+                    <input type="number" min={1} value={rounds} onChange={e => setRounds(parseInt(e.target.value) || 1)} className="w-full px-2 h-9 text-base font-mono-num"/>
+                  </Field>
+                  <Field label="勝方得分" col={1}>
+                    <input type="number" min={1} value={winPoint} onChange={e => setWinPoint(parseInt(e.target.value) || 1)} className="w-full px-2 h-9 text-base font-mono-num"/>
+                  </Field>
+                  <Field label="當前輪次" col={2}>
+                    <input type="number" min={1} max={rounds} value={currentRound} onChange={e => setCurrentRound(parseInt(e.target.value) || 1)} className="w-full px-2 h-9 text-base font-mono-num"/>
+                  </Field>
+                </div>
+
+                {/* 流程提示 */}
+                <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm ${stageBg}`}>
+                  <Icon name={stage.icon} className="w-4 h-4 flex-shrink-0"/>
+                  <span>{stage.msg}</span>
+                  <div className="ml-auto text-xs opacity-70 tabular">STEP {stage.step} / 4</div>
+                </div>
+
+                {/* 主操作 + 輔助操作 */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDrawLots}
+                    disabled={currentRound !== 1}
+                    className="btn-ghost px-4 h-10 rounded-md text-sm flex items-center gap-2"
+                    title={currentRound !== 1 ? '僅第 1 輪可抽籤' : '隨機重排籤號'}
+                  >
+                    <Icon name="dice" className="w-4 h-4"/> 抽籤
+                  </button>
+                  <button
+                    onClick={generatePairings}
+                    disabled={isPairingButtonDisabled}
+                    className="btn-primary px-5 h-10 rounded-md text-sm flex items-center gap-2 flex-1 justify-center"
+                  >
+                    <Icon name="swap" className="w-4 h-4"/>
+                    <span>抓對</span>
+                    <span className="opacity-70 text-sm font-normal">生成 R{currentRound} 桌次</span>
+                  </button>
+                  <button
+                    onClick={calculateScores}
+                    disabled={!isPairingButtonDisabled}
+                    className={`px-5 h-10 rounded-md text-sm flex items-center gap-2 flex-1 justify-center font-medium
+                      ${isPairingButtonDisabled ? 'btn-success' : 'btn-ghost opacity-50 cursor-not-allowed'}`}
+                  >
+                    <Icon name="calculator" className="w-4 h-4"/>
+                    <span>算分</span>
+                    <span className="opacity-70 text-sm font-normal">結算 R{currentRound}</span>
+                  </button>
+
+                  <div className="w-px h-8 bg-[var(--border-default)] mx-1"/>
+
+                  <label className="btn-ghost px-3 h-10 rounded-md text-sm flex items-center gap-1.5 cursor-pointer" title="上傳隊伍表 Excel">
+                    <Icon name="upload" className="w-4 h-4"/>
+                    <span className="hidden xl:inline">上傳</span>
+                    <input type="file" className="hidden" onChange={handleFileUpload} onClick={e => { (e.target as HTMLInputElement).value = ''; }} accept=".xlsx,.xls"/>
+                  </label>
+                  <button
+                    onClick={() => setShowImportExport(v => !v)}
+                    className="btn-ghost px-3 h-10 rounded-md text-sm flex items-center gap-1.5"
+                    title="匯入/匯出 Excel 與狀態備份"
+                  >
+                    <Icon name="download" className="w-4 h-4"/>
+                    <span className="hidden xl:inline">匯入/匯出</span>
+                  </button>
+                  <button
+                    onClick={resetSystem}
+                    className="btn-danger px-3 h-10 rounded-md text-sm flex items-center gap-1.5"
+                    title="清除所有資料、回到第 1 輪"
+                  >
+                    <Icon name="refresh" className="w-4 h-4"/>
+                    <span>重設</span>
+                  </button>
+                </div>
+
+                {/* 匯入/匯出區塊（沿用既有狀態） */}
+                {showImportExport && (
+                  <div className="p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] space-y-3 text-sm">
+                    <div>
+                      <div className="font-semibold text-[var(--text-secondary)] mb-1.5">Excel 下載 / 範例</div>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        <Button onClick={exportPlayersToExcel}><Icon name="download" className="w-4 h-4"/> 下載選手成績</Button>
+                        <Button onClick={exportMatchesToExcel}><Icon name="download" className="w-4 h-4"/> 下載桌次表</Button>
+                        <Button onClick={downloadSampleTeamList}><Icon name="download" className="w-4 h-4"/> 下載隊伍表範例</Button>
+                      </div>
+                      <div className="text-[var(--text-muted)] text-xs leading-relaxed">
+                        <div>
+                          <span className="font-semibold">隊伍表必填欄位：</span>
+                          <code className="bg-[var(--bg-surface)] px-1 rounded border border-[var(--border-default)] ml-1">籤號</code>（數字，從 1 開始）、
+                          <code className="bg-[var(--bg-surface)] px-1 rounded border border-[var(--border-default)]">隊伍</code>（文字）
+                        </div>
+                        <div className="mt-0.5">欄位名稱可使用同義字（如「籤號／編號／號碼／No」、「隊伍／隊名／團隊／名稱」）。第一列為標題，其後每列一隊。</div>
+                      </div>
+                    </div>
+                    <div className="border-t border-[var(--border-subtle)] pt-3">
+                      <div className="font-semibold text-[var(--text-secondary)] mb-1.5">狀態備份</div>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        <label className="btn-ghost inline-flex items-center justify-center gap-1.5 rounded-md font-medium px-3 h-8 text-sm cursor-pointer">
+                          <Icon name="upload" className="w-4 h-4"/> 上傳狀態
+                          <input type="file" className="hidden" onChange={importStateFromJSON} onClick={e => { (e.target as HTMLInputElement).value = ''; }} accept=".json"/>
+                        </label>
+                        <Button onClick={exportStateToJSON}><Icon name="download" className="w-4 h-4"/> 下載狀態</Button>
+                      </div>
+                      <div className="text-[var(--text-muted)] text-xs">把目前所有資料（隊伍、輪次、分數）打包為 JSON 檔，可匯出備份或在另一台電腦上「上傳狀態」還原。</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        )}
+        );
+      })()}
 
-        <Divider className="my-1" />
-
-        {/* 主要操作按鈕（單行，說明文字行內顯示） */}
-        <div className="flex gap-2">
-          <button
-            onClick={handleDrawLots}
-            className="flex-1 px-3 py-1.5 rounded font-medium text-sm bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 flex items-center justify-center gap-1.5"
-          >
-            <span>🎲 抽籤</span>
-            <span className="text-xs font-normal text-indigo-400">重排籤號</span>
-          </button>
-          <button
-            onClick={generatePairings}
-            disabled={isPairingButtonDisabled}
-            className={`flex-1 px-3 py-1.5 rounded font-medium text-sm flex items-center justify-center gap-1.5 transition-colors ${
-              isPairingButtonDisabled
-                ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
-                : 'bg-blue-500 text-white hover:bg-blue-600 border border-blue-500 shadow-sm'
-            }`}
-          >
-            <span>🔀 抓對</span>
-            <span className={`text-xs font-normal ${isPairingButtonDisabled ? 'text-gray-400' : 'text-blue-200'}`}>
-              {isPairingButtonDisabled ? '請先算分' : '生成桌次'}
-            </span>
-          </button>
-          <button
-            onClick={calculateScores}
-            className={`flex-1 px-3 py-1.5 rounded font-medium text-sm flex items-center justify-center gap-1.5 transition-colors ${
-              isPairingButtonDisabled
-                ? 'bg-green-500 text-white hover:bg-green-600 border border-green-500 shadow-sm'
-                : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'
-            }`}
-          >
-            <span>🧮 算分</span>
-            <span className={`text-xs font-normal ${isPairingButtonDisabled ? 'text-green-100' : 'text-green-400'}`}>計算本輪</span>
-          </button>
-          <button
-            onClick={toggleSortOrder}
-            className="flex-1 px-3 py-1.5 rounded font-medium text-sm bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 flex items-center justify-center gap-1.5"
-          >
-            <span>📊 {sortByRank ? '籤號排序' : '名次排序'}</span>
-            <span className="text-xs font-normal text-purple-400">切換左側</span>
-          </button>
-        </div>
-      </Card>
-      
-      {/* 分割視窗 */}
-      <div 
-        id="split-container"
-        className="flex flex-grow bg-white shadow rounded overflow-hidden relative"
-      >
-        {/* 左側面板：選手列表 */}
-        <div className="overflow-auto" style={{ width: `${splitRatio}%` }}>
+      {/* ─── 兩欄主內容：左排行榜、右桌次表 ─────────────────── */}
+      <div className="flex-1 flex gap-3 overflow-hidden min-h-0" id="split-container">
+        <div className="flex-shrink-0 min-w-0" style={{ width: `${splitRatio}%` }}>
           {renderPlayerList()}
         </div>
-        
+
         {/* 分割線 - 可拖動 */}
-        <div 
-          className="w-1 bg-gray-300 cursor-col-resize hover:bg-blue-500 active:bg-blue-600"
-          onMouseDown={(e) => {
-            const handleMouseMove = (e) => handleSplitDragChange(e);
-            const handleMouseUp = () => {
-              document.removeEventListener('mousemove', handleMouseMove);
-              document.removeEventListener('mouseup', handleMouseUp);
+        <div
+          className="w-1 -mx-1.5 bg-transparent cursor-col-resize hover:bg-[var(--accent-soft)] active:bg-[var(--accent)] flex-shrink-0"
+          onMouseDown={() => {
+            const onMove = (ev: MouseEvent) => handleSplitDragChange(ev as any);
+            const onUp = () => {
+              document.removeEventListener('mousemove', onMove);
+              document.removeEventListener('mouseup', onUp);
             };
-            
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
           }}
-        ></div>
-        
-        {/* 右側面板：桌次表 */}
-        <div className="overflow-auto" style={{ width: `${100 - splitRatio}%` }}>
+        />
+
+        <div className="flex-1 min-w-0">
           {renderRightPane()}
         </div>
       </div>
-      
-      {/* 關於彈窗 */}
-      {showAboutInfo && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full mx-4">
-            <div className="flex justify-between items-center mb-4">
-              <Title level={4} className="mb-0">關於本系統</Title>
-              <button
-                onClick={() => setShowAboutInfo(false)}
-                className="text-gray-500 hover:text-gray-700 text-xl font-bold"
-              >
-                ×
-              </button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <p><strong>WGP 比賽管理系統</strong> <span className="text-gray-400 font-normal">v{packageInfo.version}</span></p>
-              <p className="text-gray-600">瑞士制對戰配對與積分管理工具，專為 WGP GiveMe5 桌遊賽事設計。</p>
-              <div>
-                <p className="text-gray-500 mb-1">開發者</p>
-                <p>Rita Weng</p>
-                <a
-                  href="mailto:rita6656@gmail.com"
-                  className="text-blue-600 hover:underline"
-                >
-                  rita6656@gmail.com
-                </a>
-              </div>
-              <div>
-                <p className="text-gray-500 mb-1">GitHub 專案</p>
-                <a
-                  href="https://github.com/RitaWeng/wgp-tournament-manager"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline break-all"
-                >
-                  github.com/RitaWeng/wgp-tournament-manager
-                </a>
-              </div>
-            </div>
-            <div className="mt-6 text-right">
-              <Button onClick={() => setShowAboutInfo(false)} type="primary">關閉</Button>
-            </div>
+
+      {/* ─── Modal：關於 ─────────────────────────────────── */}
+      <Modal open={showAboutInfo} onClose={() => setShowAboutInfo(false)} title="關於本系統">
+        <div className="space-y-3">
+          <div>
+            <div className="font-semibold text-[var(--text-primary)]">WGP 比賽管理系統</div>
+            <div className="text-xs text-[var(--text-muted)] mt-0.5">v{packageInfo.version}</div>
+          </div>
+          <p>瑞士制對戰配對與積分管理工具，專為 WGP GiveMe5 桌遊賽事設計。</p>
+          <div>
+            <div className="text-[var(--text-muted)] text-xs mb-1">開發者</div>
+            <div>Rita Weng · <a className="text-[var(--accent)] hover:underline" href="mailto:rita6656@gmail.com">rita6656@gmail.com</a></div>
+          </div>
+          <div>
+            <div className="text-[var(--text-muted)] text-xs mb-1">GitHub 專案</div>
+            <a
+              href="https://github.com/RitaWeng/wgp-tournament-manager"
+              target="_blank" rel="noopener noreferrer"
+              className="text-[var(--accent)] hover:underline break-all"
+            >
+              github.com/RitaWeng/wgp-tournament-manager
+            </a>
+          </div>
+          <div className="pt-2 text-right">
+            <Button onClick={() => setShowAboutInfo(false)} type="primary">關閉</Button>
           </div>
         </div>
-      )}
+      </Modal>
 
-      {/* 投影模式（桌次表 / 名次表） */}
+      {/* ─── Modal：輔分說明 ─────────────────────────────── */}
+      <Modal open={showAuxScoreHelp} onClose={() => setShowAuxScoreHelp(false)} title="輔分說明">
+        <div className="space-y-3">
+          <p className="text-[var(--text-muted)]">排名依以下順序依序比較：</p>
+          <div className="space-y-2">
+            <div className="flex gap-2"><Pill tone="accent" size="xs" className="flex-shrink-0 mt-0.5">總分</Pill><div>每輪勝者獲得勝方得分，敗者得 0 分，輪空獲得勝方得分。</div></div>
+            <div className="flex gap-2"><Pill tone="accent" size="xs" className="flex-shrink-0 mt-0.5">輔分一</Pill><div>所遇對手之總分和。所有對手（不含輪空）的最終總分加總。</div></div>
+            <div className="flex gap-2"><Pill tone="accent" size="xs" className="flex-shrink-0 mt-0.5">輔分二</Pill><div>所負對手之總分和。僅計算落敗場次中對手的最終總分加總。</div></div>
+            <div className="flex gap-2"><Pill tone="accent" size="xs" className="flex-shrink-0 mt-0.5">輔分三</Pill><div>直接對戰結果。僅在前述均相同時啟用。</div></div>
+          </div>
+          <p className="text-xs text-[var(--text-disabled)]">* 輪空場次不計入輔分計算。</p>
+          <div className="pt-2 text-right">
+            <Button onClick={() => setShowAuxScoreHelp(false)} type="primary">關閉</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ─── 投影模式（桌次表 / 名次表） ─────────────────── */}
       {projectionMode && (
-        <div className="fixed inset-0 bg-white z-50 flex flex-col">
-          <div className="absolute top-3 right-3 z-10 flex gap-2 items-center">
+        <div className="fixed inset-0 z-50 flex flex-col proj-bg">
+          <div className="absolute top-4 right-4 z-10 flex gap-2 items-center">
             {projectionMode === 'standings' && (
-              <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded border border-gray-300 text-sm">
-                <span>顯示前</span>
-                <InputNumber
-                  min={1}
-                  max={Math.max(1, players.length)}
+              <div className="flex items-center gap-2 px-3 h-9 bg-[var(--bg-elevated)] rounded-md border border-[var(--border-default)] text-sm">
+                <span className="text-[var(--text-muted)]">前</span>
+                <input
+                  type="number" min={1} max={Math.max(1, players.length)}
                   value={standingsTopN ?? players.length}
-                  onChange={(v) => setStandingsTopN(v >= players.length ? null : v)}
-                  style={{ width: '60px' }}
+                  onChange={e => {
+                    const v = parseInt(e.target.value) || 1;
+                    setStandingsTopN(v >= players.length ? null : v);
+                  }}
+                  className="w-14 h-7 px-1 text-center text-sm font-mono-num"
                 />
-                <span>名（共 {players.length} 隊）</span>
+                <span className="text-[var(--text-muted)]">名 / {players.length}</span>
                 {standingsTopN !== null && (
-                  <button
-                    onClick={() => setStandingsTopN(null)}
-                    className="ml-1 text-xs text-blue-600 hover:underline"
-                    title="顯示全部"
-                  >
-                    全部
-                  </button>
+                  <button onClick={() => setStandingsTopN(null)} className="ml-1 text-xs text-[var(--accent)] hover:underline">全部</button>
                 )}
               </div>
             )}
             <button
               onClick={() => {
-                if (document.fullscreenElement) {
-                  document.exitFullscreen?.();
-                } else {
-                  document.documentElement.requestFullscreen?.();
-                }
+                if (document.fullscreenElement) document.exitFullscreen?.();
+                else document.documentElement.requestFullscreen?.();
               }}
-              className="px-3 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300 border border-gray-400"
-              title="切換瀏覽器全螢幕"
+              className="btn-ghost px-3 h-9 rounded-md text-sm flex items-center gap-1.5"
             >
-              ⛶ 全螢幕
+              <Icon name="expand" className="w-4 h-4"/> 全螢幕
             </button>
             <button
               onClick={() => setProjectionMode(null)}
-              className="px-3 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300 border border-gray-400"
+              className="btn-ghost px-3 h-9 rounded-md text-sm flex items-center gap-1.5"
               title="關閉（ESC）"
             >
-              ✕ 關閉
+              <Icon name="x" className="w-4 h-4"/> 關閉
             </button>
           </div>
           {projectionMode === 'tables' ? renderTablesProjection() : renderStandingsProjection()}
         </div>
       )}
-
-      {/* 輔分說明彈窗 */}
-      {showAuxScoreHelp && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
-            <div className="flex justify-between items-center mb-4">
-              <Title level={4} className="mb-0">輔分說明</Title>
-              <button 
-                onClick={() => setShowAuxScoreHelp(false)}
-                className="text-gray-500 hover:text-gray-700 text-xl font-bold"
-              >
-                ×
-              </button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <p className="text-gray-500">排名依以下順序依序比較：</p>
-              <p><strong>總分</strong>：每輪勝者獲得勝方得分，敗者得 0 分，輪空獲得勝方得分。</p>
-              <p><strong>輔分一</strong>：所遇對手之總分和。所有對手（不含輪空）的最終總分加總，數值越高代表遇到的對手整體實力越強。</p>
-              <p><strong>輔分二</strong>：所負對手之總分和。僅計算落敗場次中對手的最終總分加總。</p>
-              <p><strong>輔分三</strong>：直接對戰結果。僅在總分、輔分一、輔分二三項均相同時啟用，計算與同分組選手之間的直接對戰得失分。</p>
-              <p className="text-gray-400 text-xs">* 輪空場次不計入輔分計算。</p>
-            </div>
-            <div className="mt-6 text-right">
-              <Button 
-                onClick={() => setShowAuxScoreHelp(false)}
-                type="primary"
-              >
-                關閉
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
+
+// Header 設定列：欄位 + 唯讀靜態值
+const Field = ({ label, children, col = 2 }: { label: string; children?: React.ReactNode; col?: number }) => (
+  <div className="flex flex-col gap-1" style={{ gridColumn: `span ${col} / span ${col}` }}>
+    <label className="text-xs uppercase tracking-wider text-[var(--text-muted)] font-semibold">{label}</label>
+    {children}
+  </div>
+);
+
+const Static = ({ children }: { children?: React.ReactNode }) => (
+  <div className="px-2 h-9 flex items-center text-base text-[var(--text-primary)] bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-md font-medium">
+    {children}
+  </div>
+);
 
 export default TournamentManager;
