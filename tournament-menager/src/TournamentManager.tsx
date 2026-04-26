@@ -251,6 +251,12 @@ const TournamentManager = () => {
   const [showAuxScoreHelp, setShowAuxScoreHelp] = useState(false);
   // 新增狀態用於控制關於/聯絡資訊的顯示
   const [showAboutInfo, setShowAboutInfo] = useState(false);
+  // 投影模式：'tables' = 桌次表投影、'standings' = 名次表投影、null = 關閉
+  const [projectionMode, setProjectionMode] = useState<null | 'tables' | 'standings'>(null);
+  // 投影名次表：自訂競賽名稱（空字串時 fallback 到 gameTitle）
+  const [projectionTitle, setProjectionTitle] = useState<string>('');
+  // 投影名次表：只顯示前 N 名（null = 全部）
+  const [standingsTopN, setStandingsTopN] = useState<number | null>(null);
   const saveStateToLocalStorage = () => {
     try {
       // 建立一個包含所有需要保存的狀態的對象
@@ -271,6 +277,8 @@ const TournamentManager = () => {
         isPairingButtonDisabled,
         showAuxScoreHelp,
         scoredRounds,
+        projectionTitle,
+        standingsTopN,
         lastSaved: new Date().toISOString() // 記錄最後保存時間
       };
       
@@ -318,6 +326,12 @@ const TournamentManager = () => {
       if (appState.scoredRounds !== undefined) {
         setScoredRounds(appState.scoredRounds);
       }
+      if (appState.projectionTitle !== undefined) {
+        setProjectionTitle(appState.projectionTitle);
+      }
+      if (appState.standingsTopN !== undefined) {
+        setStandingsTopN(appState.standingsTopN);
+      }
 
       console.log('成功加載狀態，最後保存於:', new Date(appState.lastSaved).toLocaleString());
 
@@ -349,6 +363,8 @@ const TournamentManager = () => {
         isPairingButtonDisabled,
         showAuxScoreHelp,
         scoredRounds,
+        projectionTitle,
+        standingsTopN,
         exportedAt: new Date().toISOString() // 記錄下載時間
       };
       
@@ -408,6 +424,12 @@ const TournamentManager = () => {
         }
         if (appState.scoredRounds !== undefined) {
           setScoredRounds(appState.scoredRounds);
+        }
+        if (appState.projectionTitle !== undefined) {
+          setProjectionTitle(appState.projectionTitle);
+        }
+        if (appState.standingsTopN !== undefined) {
+          setStandingsTopN(appState.standingsTopN);
         }
 
         message.success(`成功上傳狀態，創建於: ${new Date(appState.exportedAt || appState.lastSaved).toLocaleString()}`);
@@ -480,7 +502,7 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     if (players.length > 0) {
       saveStateToLocalStorage();
     }
-  }, [allPlayers, rounds, gameType, winPoint, players, matches, matchesByRound, sortByRank, allowSameCountry, currentRound, gameTitle, selectedRound, isPairingButtonDisabled, showAuxScoreHelp, scoredRounds]);
+  }, [allPlayers, rounds, gameType, winPoint, players, matches, matchesByRound, sortByRank, allowSameCountry, currentRound, gameTitle, selectedRound, isPairingButtonDisabled, showAuxScoreHelp, scoredRounds, projectionTitle, standingsTopN]);
   
   // 在組件卸載前執行最後一次保存
   useEffect(() => {
@@ -490,6 +512,16 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
       }
     };
   }, []);
+
+  // 投影模式時按 ESC 關閉
+  useEffect(() => {
+    if (!projectionMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setProjectionMode(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [projectionMode]);
 
   const initializePlayers = (forceNew = forceNewPlayers) => {
     // 檢查是否為現有玩家資料更新
@@ -2236,15 +2268,22 @@ const handleFileUpload = (event) => {
     return (
       <div>
         <div className="mb-4 relative">
-          <Button 
+          <Button
             onClick={() => setEditMode(!editMode)}
             type={editMode ? 'primary' : 'default'}
             className="absolute left-0 top-0"
           >
             {editMode ? '完成編輯' : '編輯選手資料'}
           </Button>
-          
+
           <div className="text-center font-bold w-full">隊伍列表及成績</div>
+
+          <Button
+            onClick={() => setProjectionMode('standings')}
+            className="absolute right-0 top-0"
+          >
+            🖥 投影名次表
+          </Button>
         </div>
         
         <div className="overflow-x-auto max-h-[calc(100vh-180px)]">
@@ -2318,7 +2357,16 @@ const handleFileUpload = (event) => {
         {roundOptions.length > 0 ? (
           <>
             <div className="mb-3 flex items-center justify-between">
-              <div className="font-bold text-sm text-gray-700">桌次表</div>
+              <div className="flex items-center gap-2">
+                <div className="font-bold text-sm text-gray-700">桌次表</div>
+                <button
+                  onClick={() => setProjectionMode('tables')}
+                  className="px-2 py-0.5 text-xs rounded bg-gray-200 text-gray-800 hover:bg-gray-300 font-medium"
+                  title="投影桌次表到大螢幕（ESC 關閉）"
+                >
+                  🖥 投影
+                </button>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-500">輪次：</span>
                 <select
@@ -2353,6 +2401,143 @@ const handleFileUpload = (event) => {
             </div>
           </div>
         )}
+      </div>
+    );
+  };
+
+  // 名次中文標籤（投影名次表用）：1→冠軍、2→亞軍、3→季軍、4→殿軍、5+→第N名優勝
+  const getRankLabel = (rank: number): string => {
+    if (!rank || rank < 1) return '—';
+    if (rank === 1) return '冠軍';
+    if (rank === 2) return '亞軍';
+    if (rank === 3) return '季軍';
+    if (rank === 4) return '殿軍';
+    const cn = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+    let numText: string;
+    if (rank <= 10) numText = cn[rank];
+    else if (rank < 20) numText = `十${cn[rank - 10]}`;
+    else if (rank < 100) {
+      const t = Math.floor(rank / 10);
+      const o = rank % 10;
+      numText = `${cn[t]}十${o === 0 ? '' : cn[o]}`;
+    } else {
+      numText = String(rank);
+    }
+    return `第${numText}名優勝`;
+  };
+
+  // 桌次表投影視圖：依桌數自動分欄、黃色底色、輪空獨立呈現
+  const renderTablesProjection = () => {
+    const matchesForRound = matchesByRound[selectedRound] || [];
+    const total = matchesForRound.length;
+    const cols = Math.min(4, Math.max(1, Math.ceil(total / 5)));
+    const tablesPerCol = Math.ceil(total / cols) || 1;
+    const chunks: any[][] = [];
+    for (let i = 0; i < cols; i++) {
+      chunks.push(matchesForRound.slice(i * tablesPerCol, (i + 1) * tablesPerCol));
+    }
+    const nameOf = (num: number) => players.find(p => p.number === num)?.name || '';
+
+    return (
+      <div className="flex-1 flex flex-col items-center p-8 overflow-auto">
+        <h1 className="text-5xl font-bold mb-6 text-gray-800">
+          {gameTitle}　第 {selectedRound} 輪 桌次表
+        </h1>
+        {total === 0 ? (
+          <div className="text-2xl text-gray-400 mt-12">尚未生成桌次表</div>
+        ) : (
+          <div className="flex gap-6 items-start text-3xl">
+            {chunks.map((chunk, ci) => (
+              <table key={ci} className="border-collapse">
+                <thead>
+                  <tr className="bg-gray-300">
+                    <th className="border-2 border-black px-5 py-2 w-24">桌號</th>
+                    <th className="border-2 border-black px-5 py-2 w-24">籤號</th>
+                    <th className="border-2 border-black px-5 py-2 min-w-[10em]">隊名</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {chunk.map((m, mi) => {
+                    const isBye = m.player2 === 0;
+                    if (isBye) {
+                      return (
+                        <tr key={mi} className="bg-orange-100">
+                          <td className="border-2 border-black px-5 py-2 text-center text-gray-400">—</td>
+                          <td className="border-2 border-black px-5 py-2 text-center font-bold">{m.player1}</td>
+                          <td className="border-2 border-black px-5 py-2">
+                            {nameOf(m.player1)}
+                            <span className="ml-3 px-2 py-0.5 bg-red-500 text-white text-xl rounded align-middle">輪空</span>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    // 依桌次奇偶分色：奇數桌（1, 3, 5...）黃色、偶數桌（2, 4, 6...）藍色
+                    const rowBg = m.table % 2 === 1 ? 'bg-yellow-100' : 'bg-blue-100';
+                    return (
+                      <React.Fragment key={mi}>
+                        <tr className={rowBg}>
+                          <td
+                            rowSpan={2}
+                            className={`border-2 border-black px-5 py-2 text-center font-extrabold text-5xl align-middle ${rowBg}`}
+                          >
+                            {m.table}
+                          </td>
+                          <td className="border-2 border-black px-5 py-2 text-center font-bold">{m.player1}</td>
+                          <td className="border-2 border-black px-5 py-2">{nameOf(m.player1)}</td>
+                        </tr>
+                        <tr className={rowBg}>
+                          <td className="border-2 border-black px-5 py-2 text-center font-bold">{m.player2}</td>
+                          <td className="border-2 border-black px-5 py-2">{nameOf(m.player2)}</td>
+                        </tr>
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 名次表投影視圖：粉色底色、單欄、依名次排序
+  const renderStandingsProjection = () => {
+    const sorted = [...players].sort((a, b) => (a.rank || 9999) - (b.rank || 9999));
+    const limit = standingsTopN ?? sorted.length;
+    const display = sorted.slice(0, limit);
+    return (
+      <div className="flex-1 flex flex-col items-center p-8 overflow-auto">
+        <table className="border-collapse text-3xl bg-white">
+          <thead>
+            <tr>
+              <th colSpan={3} className="border-2 border-black px-8 py-4 bg-pink-100 text-center">
+                <input
+                  type="text"
+                  value={projectionTitle}
+                  onChange={(e) => setProjectionTitle(e.target.value)}
+                  placeholder={gameTitle}
+                  title="點擊可修改競賽名稱"
+                  className="w-full text-center text-4xl font-bold bg-transparent border border-transparent rounded px-2 py-1 hover:border-pink-300 focus:border-pink-400 focus:bg-white focus:outline-none"
+                />
+              </th>
+            </tr>
+            <tr className="bg-gray-200">
+              <th className="border-2 border-black px-6 py-2 min-w-[8em]">名次</th>
+              <th className="border-2 border-black px-6 py-2 min-w-[5em]">籤號</th>
+              <th className="border-2 border-black px-6 py-2 min-w-[12em]">隊名</th>
+            </tr>
+          </thead>
+          <tbody>
+            {display.map((p, i) => (
+              <tr key={p.number} className={i % 2 === 0 ? 'bg-pink-50' : 'bg-white'}>
+                <td className="border-2 border-black px-6 py-2 font-bold">{getRankLabel(p.rank)}</td>
+                <td className="border-2 border-black px-6 py-2 text-center font-bold">{p.number}</td>
+                <td className="border-2 border-black px-6 py-2">{p.name}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     );
   };
@@ -2681,6 +2866,57 @@ const handleFileUpload = (event) => {
               <Button onClick={() => setShowAboutInfo(false)} type="primary">關閉</Button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 投影模式（桌次表 / 名次表） */}
+      {projectionMode && (
+        <div className="fixed inset-0 bg-white z-50 flex flex-col">
+          <div className="absolute top-3 right-3 z-10 flex gap-2 items-center">
+            {projectionMode === 'standings' && (
+              <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded border border-gray-300 text-sm">
+                <span>顯示前</span>
+                <InputNumber
+                  min={1}
+                  max={Math.max(1, players.length)}
+                  value={standingsTopN ?? players.length}
+                  onChange={(v) => setStandingsTopN(v >= players.length ? null : v)}
+                  style={{ width: '60px' }}
+                />
+                <span>名（共 {players.length} 隊）</span>
+                {standingsTopN !== null && (
+                  <button
+                    onClick={() => setStandingsTopN(null)}
+                    className="ml-1 text-xs text-blue-600 hover:underline"
+                    title="顯示全部"
+                  >
+                    全部
+                  </button>
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => {
+                if (document.fullscreenElement) {
+                  document.exitFullscreen?.();
+                } else {
+                  document.documentElement.requestFullscreen?.();
+                }
+              }}
+              className="px-3 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300 border border-gray-400"
+              title="切換瀏覽器全螢幕"
+            >
+              ⛶ 全螢幕
+            </button>
+            <button
+              onClick={() => setProjectionMode(null)}
+              className="px-3 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300 border border-gray-400"
+              title="關閉（ESC）"
+            >
+              ✕ 關閉
+            </button>
+          </div>
+          {projectionMode === 'tables' ? renderTablesProjection() : renderStandingsProjection()}
         </div>
       )}
 
