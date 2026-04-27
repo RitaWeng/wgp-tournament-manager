@@ -254,6 +254,7 @@ git push && git push --tags
 
 | 日期 | 版本 / Commit | 內容 |
 |------|--------------|------|
+| 2026-04-27 | `v1.2.0` 主題化、行動版、設定鎖定 | **主題系統**：引入 CSS 變數主題架構，新增 4 套主題（light / dark / paper / navy）即時切換，選擇寫入 localStorage；元件統一改用 `.btn-*` / `--text-*` / `--bg-*` token（`15c7f08`、`0fa6278`）。**手機 RWD**：雙欄改堆疊、設定列改 2 欄、桌次配對改上下排版、字體基準 14px、`min-h-[100dvh]` 避 iOS 網址列、投影按鈕在手機隱藏（`c52b24a`）。**設定鎖定**：比賽開始後（已抓對或已算分）自動鎖定參賽隊伍／輪數／勝分為唯讀，避免追溯改寫已紀錄分數（`c52b24a`）。**投影模式精修**：桌次投影對齊名次表風格（色帶 gradient + 同色邊線），桌號直式排列、奇偶桌暖琥珀/冷藍區分（`4970c0b`、`15c7f08`）。**視覺微調**：底色加深（#EBEEF2）；歡迎使用橫幅新增 X 關閉按鈕（`2c88bd4`、`428c7a3`）。**基建**：tsconfig 改用 `moduleResolution: bundler` + target es2017 消除 TS 5.8 deprecation；整併 `.gitignore` 至根目錄（`2dffd71`） |
 | 2026-02-21 | `515978b` update version | 更新程式版本號 |
 | 2026-02-21 | `3154a14` 移除 Electron | 移除 Electron 桌面封裝（`electron.js` 及相關設定），專案改為純線上發布（GitHub Pages） |
 | 2026-02-21 | `5b4f2ca` doc: add readme | 新增 README，說明功能特色、操作流程、瑞士制算法與技術架構 |
