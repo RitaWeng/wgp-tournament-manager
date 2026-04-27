@@ -172,6 +172,22 @@ html {
   /* 全域字體基準：Tailwind 的 text-* / spacing 皆基於 rem，調整這裡會等比放大整個 UI */
   font-size: 18px;
 }
+/* 手機：縮小字體基準，避免整個 UI 被等比放大撐爆 */
+@media (max-width: 640px) {
+  html { font-size: 14px; }
+}
+
+/* 手機：雙欄 split 改堆疊；inline style 設的寬度需強制覆寫為 100% */
+@media (max-width: 767px) {
+  .split-pane { width: 100% !important; min-height: 70vh; }
+}
+
+/* 設定列 Field：桌面（>=sm）依 --field-col 變數展開為 12 欄 grid 的跨欄 */
+@media (min-width: 640px) {
+  [style*="--field-col"] {
+    grid-column: span var(--field-col) / span var(--field-col);
+  }
+}
 body {
   margin: 0;
   font-family: var(--font-body);

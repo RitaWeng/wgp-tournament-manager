@@ -556,7 +556,7 @@ const TournamentManager = () => {
     
     reader.onload = (e) => {
       try {
-        const appState = JSON.parse(e.target.result);
+        const appState = JSON.parse(e.target.result as string);
         
         // 檢查上傳的數據是否包含必要的字段
         if (!appState.players || !appState.matchesByRound) {
@@ -688,7 +688,7 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
       // 只更新輪數變動
       const updatedPlayers = players.map(player => {
         // 確保 rounds 陣列長度為當前的輪數
-        const newRounds = Array(rounds).fill().map((_, i) => {
+        const newRounds = Array(rounds).fill(null).map((_, i) => {
           // 保留現有輪次資料，只為新增的輪次創建空資料
           return i < player.rounds.length 
             ? player.rounds[i] 
@@ -711,7 +711,7 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
           auxScore1: 0, // 輔分一：所遇對手之總分和
           auxScore2: 0, // 輔分二：所負對手之總分和
           auxScore3: 0, // 輔分三：彼此對戰之勝負
-          rounds: Array(rounds).fill().map(() => ({ score: null, opponent: null, isBlack: false }))
+          rounds: Array(rounds).fill(null).map(() => ({ score: null, opponent: null, isBlack: false }))
         });
       }
       setPlayers(newPlayers);
@@ -1567,7 +1567,7 @@ const handleFileUpload = (event) => {
   
   // 嘗試直接以 ArrayBuffer 方式讀取，這對所有 Excel 格式最通用
   let workbook;
-  const data = new Uint8Array(e.target.result);
+  const data = new Uint8Array(e.target.result as ArrayBuffer);
   
   try {
   console.log("嘗試以 array 類型讀取...");
@@ -1582,7 +1582,7 @@ const handleFileUpload = (event) => {
   console.log("嘗試以 binary 類型讀取...");
   
   // 如果 array 讀取失敗，嘗試 binary 類型
-  const binaryString = Array.from(new Uint8Array(e.target.result))
+  const binaryString = Array.from(new Uint8Array(e.target.result as ArrayBuffer))
     .map(byte => String.fromCharCode(byte))
       .join('');
       
@@ -1630,7 +1630,7 @@ const handleFileUpload = (event) => {
     // 手動將原始數據轉換為對象數組
     jsonData = rawData.slice(1).map(row => {
         const obj = {};
-          headers.forEach((header, index) => {
+          (headers as any[]).forEach((header, index) => {
               if (header) { // 只處理有標題的列
                 obj[header] = row[index] || '';
               }
@@ -1658,11 +1658,11 @@ const handleFileUpload = (event) => {
       const worksheet = workbook.Sheets[sheetName];
       
         // 嘗試使用不同的轉換選項
-        [
+        ([
           { header: 'A', defval: '', raw: false },
           { defval: '', raw: false },
           { header: 1, defval: '', raw: false }
-        ].some(options => {
+        ] as XLSX.Sheet2JSONOpts[]).some(options => {
           try {
             console.log(`嘗試工作表 ${sheetName} 使用選項:`, options);
           const tempData = XLSX.utils.sheet_to_json(worksheet, options);
@@ -1673,7 +1673,7 @@ const handleFileUpload = (event) => {
               const headers = tempData[0];
               jsonData = tempData.slice(1).map(row => {
               const obj = {};
-              headers.forEach((header, index) => {
+              (headers as any[]).forEach((header, index) => {
                   if (header) {
                     obj[header] = row[index] || '';
                   }
@@ -1910,7 +1910,7 @@ const handleFileUpload = (event) => {
               auxScore1: 0,
               auxScore2: 0,
               auxScore3: 0,
-              rounds: Array(rounds).fill().map(() => ({ score: null, opponent: null, isBlack: false }))
+              rounds: Array(rounds).fill(null).map(() => ({ score: null, opponent: null, isBlack: false }))
             });
           }
         }
@@ -1956,7 +1956,8 @@ const handleFileUpload = (event) => {
   
   reader.onerror = (error) => {
     console.error('檔案讀取錯誤:', error);
-    message.error(`讀取檔案時發生錯誤: ${error.message || '未知錯誤'}`);
+    const errMsg = reader.error?.message || '未知錯誤';
+    message.error(`讀取檔案時發生錯誤: ${errMsg}`);
   };
   
   // 使用 ArrayBuffer 模式讀取所有檔案，簡化邏輯
@@ -2277,9 +2278,9 @@ const handleFileUpload = (event) => {
         <div className="elevated rounded-lg overflow-hidden border-2 border-[var(--accent-border)]">
           <div className="flex items-stretch">
             {TableCell}
-            <div className="flex-1 grid grid-cols-[1fr_auto_1fr] items-center divide-x divide-[var(--border-subtle)] min-w-0">
+            <div className="flex-1 flex flex-col sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center divide-y sm:divide-y-0 sm:divide-x divide-[var(--border-subtle)] min-w-0">
               <div className="px-2 py-1.5">{renderSelect(match.player1, true)}</div>
-              <div className="px-3 py-1.5 text-center flex-shrink-0">
+              <div className="px-3 py-1 sm:py-1.5 text-center flex-shrink-0">
                 <div className="text-xs tracking-[0.25em] text-[var(--text-muted)] font-mono-num font-semibold">VS</div>
               </div>
               <div className="px-2 py-1.5">{renderSelect(match.player2, false)}</div>
@@ -2340,9 +2341,9 @@ const handleFileUpload = (event) => {
       <div className="elevated rounded-lg overflow-hidden">
         <div className="flex items-stretch">
           {TableCell}
-          <div className="flex-1 grid grid-cols-[1fr_auto_1fr] items-center divide-x divide-[var(--border-subtle)] min-w-0">
+          <div className="flex-1 flex flex-col sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center divide-y sm:divide-y-0 sm:divide-x divide-[var(--border-subtle)] min-w-0">
             {renderSide(p1, p1Won, () => recordResult(matchIndex, match.player1, round))}
-            <div className="px-4 py-4 text-center flex-shrink-0">
+            <div className="px-4 py-1 sm:py-4 text-center flex-shrink-0">
               <div className="text-xs tracking-[0.25em] text-[var(--text-muted)] font-mono-num font-semibold">VS</div>
             </div>
             {renderSide(p2, p2Won, () => recordResult(matchIndex, match.player2, round))}
@@ -2545,9 +2546,11 @@ const handleFileUpload = (event) => {
             <Button onClick={() => setEditMode(!editMode)} type={editMode ? 'primary' : undefined} className="whitespace-nowrap">
               <Icon name="edit" className="w-4 h-4"/> {editMode ? '完成' : '編輯'}
             </Button>
-            <Button onClick={() => setProjectionMode('standings')} title="投影名次表" className="whitespace-nowrap">
-              <Icon name="monitor" className="w-4 h-4"/> 投影
-            </Button>
+            <span className="hidden lg:contents">
+              <Button onClick={() => setProjectionMode('standings')} title="投影名次表" className="whitespace-nowrap">
+                <Icon name="monitor" className="w-4 h-4"/> 投影
+              </Button>
+            </span>
           </div>
         </div>
 
@@ -2619,9 +2622,11 @@ const handleFileUpload = (event) => {
                 </Button>
               </>
             )}
-            <Button onClick={() => setProjectionMode('tables')} disabled={total === 0} title="投影桌次表" className="whitespace-nowrap">
-              <Icon name="monitor" className="w-4 h-4"/> 投影
-            </Button>
+            <span className="hidden lg:contents">
+              <Button onClick={() => setProjectionMode('tables')} disabled={total === 0} title="投影桌次表" className="whitespace-nowrap">
+                <Icon name="monitor" className="w-4 h-4"/> 投影
+              </Button>
+            </span>
           </div>
         </div>
 
@@ -2854,13 +2859,15 @@ const handleFileUpload = (event) => {
   };
 
   return (
-    <div className="h-screen flex flex-col p-3 gap-3">
+    <div className="min-h-[100dvh] md:h-screen flex flex-col p-3 gap-3">
       {/* ─── Header（可摺疊） ─────────────────────────────── */}
       {(() => {
         const existingRounds = Object.keys(matchesByRound).map(r => parseInt(r, 10));
         const isCurrentScored = scoredRounds.includes(currentRound);
         const isCurrentPaired = existingRounds.includes(currentRound);
         const allDone = scoredRounds.length >= rounds;
+        // 比賽是否已開始：任一輪已生成桌次或已算分。用於鎖定影響計分的設定欄位（參賽隊伍 / 輪數 / 勝方得分）
+        const tournamentStarted = existingRounds.length > 0 || scoredRounds.length > 0;
         // 初次使用 / 全新空白狀態：尚未上傳名單、尚未抓對、尚未算分
         const isInitialState =
           players.length > 0 &&
@@ -2885,11 +2892,11 @@ const handleFileUpload = (event) => {
                                    'bg-[var(--info-soft)] text-[var(--info)]';
 
         const compactActions = (
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleDrawLots}
               disabled={currentRound !== 1}
-              className="btn-ghost px-3 h-9 rounded-md text-sm flex items-center gap-1.5"
+              className="btn-ghost px-3 h-9 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap"
               title={currentRound !== 1 ? '僅第 1 輪可抽籤' : '抽籤'}
             >
               <Icon name="dice" className="w-4 h-4"/> 抽籤
@@ -2897,14 +2904,14 @@ const handleFileUpload = (event) => {
             <button
               onClick={generatePairings}
               disabled={isPairingButtonDisabled}
-              className="btn-primary px-4 h-9 rounded-md text-sm flex items-center gap-1.5"
+              className="btn-primary px-4 h-9 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap"
             >
               <Icon name="swap" className="w-4 h-4"/> 抓對 R{currentRound}
             </button>
             <button
               onClick={calculateScores}
               disabled={!isPairingButtonDisabled}
-              className={`px-4 h-9 rounded-md text-sm flex items-center gap-1.5 font-medium
+              className={`px-4 h-9 rounded-md text-sm flex items-center gap-1.5 font-medium whitespace-nowrap
                 ${isPairingButtonDisabled ? 'btn-success' : 'btn-ghost opacity-50 cursor-not-allowed'}`}
             >
               <Icon name="calculator" className="w-4 h-4"/> 算分
@@ -2915,7 +2922,7 @@ const handleFileUpload = (event) => {
         return (
           <div className="surface rounded-xl flex-shrink-0">
             {/* 頂部品牌列 */}
-            <div className="flex items-center justify-between px-4 h-12 border-b border-[var(--border-subtle)]">
+            <div className="flex flex-wrap items-center justify-between gap-y-2 px-4 py-2 md:py-0 md:h-12 border-b border-[var(--border-subtle)]">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 rounded-md bg-gradient-to-br from-[var(--accent)] to-[oklch(0.55_0.17_30)] flex items-center justify-center flex-shrink-0">
@@ -2928,9 +2935,9 @@ const handleFileUpload = (event) => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {/* 輪次燈號（可點切換當前輪次） */}
-                <div className="flex items-center gap-1 mr-2">
+                <div className="flex items-center gap-1 md:mr-2">
                   {Array.from({ length: rounds }, (_, i) => i + 1).map(r => {
                     const done = scoredRounds.includes(r);
                     const cur = r === currentRound;
@@ -2955,12 +2962,12 @@ const handleFileUpload = (event) => {
                 <div id="theme-picker-root" className="relative">
                   <button
                     onClick={() => setThemePickerOpen(o => !o)}
-                    className="btn-ghost px-3 h-8 rounded-md text-sm flex items-center gap-1.5"
+                    className="btn-ghost px-2 sm:px-3 h-8 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap"
                     title="切換主題"
                     aria-haspopup="true"
                     aria-expanded={themePickerOpen}
                   >
-                    <Icon name="palette" className="w-4 h-4"/> 主題
+                    <Icon name="palette" className="w-4 h-4"/> <span className="hidden sm:inline">主題</span>
                     <Icon name="chevronDown" className="w-3 h-3 opacity-60"/>
                   </button>
                   {themePickerOpen && (
@@ -2992,19 +2999,19 @@ const handleFileUpload = (event) => {
                     </div>
                   )}
                 </div>
-                <button onClick={() => setShowAuxScoreHelp(true)} className="btn-ghost px-3 h-8 rounded-md text-sm flex items-center gap-1.5">
-                  <Icon name="help" className="w-4 h-4"/> 輔分說明
+                <button onClick={() => setShowAuxScoreHelp(true)} className="btn-ghost px-2 sm:px-3 h-8 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap" title="輔分說明">
+                  <Icon name="help" className="w-4 h-4"/> <span className="hidden sm:inline">輔分說明</span>
                 </button>
-                <button onClick={() => setShowAboutInfo(true)} className="btn-ghost px-3 h-8 rounded-md text-sm flex items-center gap-1.5">
-                  <Icon name="info" className="w-4 h-4"/> 關於
+                <button onClick={() => setShowAboutInfo(true)} className="btn-ghost px-2 sm:px-3 h-8 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap" title="關於">
+                  <Icon name="info" className="w-4 h-4"/> <span className="hidden sm:inline">關於</span>
                 </button>
                 <button
                   onClick={() => setHeaderCollapsed(!headerCollapsed)}
-                  className="btn-ghost px-3 h-8 rounded-md text-sm flex items-center gap-1.5"
+                  className="btn-ghost px-2 sm:px-3 h-8 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap"
                   title={headerCollapsed ? '展開設定' : '摺疊設定'}
                 >
                   <Icon name={headerCollapsed ? 'chevronDown' : 'chevronUp'} className="w-3.5 h-3.5"/>
-                  {headerCollapsed ? '展開' : '摺疊'}
+                  <span className="hidden sm:inline">{headerCollapsed ? '展開' : '摺疊'}</span>
                 </button>
               </div>
             </div>
@@ -3046,8 +3053,8 @@ const handleFileUpload = (event) => {
 
             {/* 摺疊狀態：只顯示流程提示 + 主動作 */}
             {headerCollapsed ? (
-              <div className="flex items-center gap-3 px-4 py-2.5">
-                <div className={`flex items-center gap-2 flex-1 min-w-0 px-3 py-2 rounded-md text-sm ${stageBg}`}>
+              <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+                <div className={`flex items-center gap-2 flex-1 min-w-[200px] px-3 py-2 rounded-md text-sm ${stageBg}`}>
                   <Icon name={stage.icon} className="w-4 h-4 flex-shrink-0"/>
                   <span className="truncate">{stage.msg}</span>
                 </div>
@@ -3055,23 +3062,35 @@ const handleFileUpload = (event) => {
               </div>
             ) : (
               <div className="px-4 py-3 space-y-3">
-                {/* 設定列：grid 排版 */}
-                <div className="grid grid-cols-12 gap-3">
+                {/* 設定列：手機 2 欄、桌面 12 欄 */}
+                {/* 比賽一旦開始（任一輪已生成桌次或已算分），這 3 個欄位鎖為唯讀，避免追溯改寫已紀錄的勝負與分數 */}
+                {(() => {
+                  const lockedTitle = '比賽已開始，無法修改。如需更動，請先點「重設」清除資料。';
+                  return (
+                <div className="grid grid-cols-2 sm:grid-cols-12 gap-3">
                   <Field label="賽制" col={2}><Static>瑞士制</Static></Field>
                   <Field label="比賽項目" col={3}><Static>{gameTitle}</Static></Field>
                   <Field label="參賽隊伍" col={2}>
-                    <input type="number" min={2} value={allPlayers} onChange={e => setAllPlayers(parseInt(e.target.value) || 2)} className="w-full px-2 h-9 text-base font-mono-num"/>
+                    {tournamentStarted
+                      ? <Static title={lockedTitle}>{allPlayers}</Static>
+                      : <input type="number" min={2} value={allPlayers} onChange={e => setAllPlayers(parseInt(e.target.value) || 2)} className="w-full px-2 h-9 text-base font-mono-num"/>}
                   </Field>
                   <Field label="輪數" col={2}>
-                    <input type="number" min={1} value={rounds} onChange={e => setRounds(parseInt(e.target.value) || 1)} className="w-full px-2 h-9 text-base font-mono-num"/>
+                    {tournamentStarted
+                      ? <Static title={lockedTitle}>{rounds}</Static>
+                      : <input type="number" min={1} value={rounds} onChange={e => setRounds(parseInt(e.target.value) || 1)} className="w-full px-2 h-9 text-base font-mono-num"/>}
                   </Field>
                   <Field label="勝方得分" col={1}>
-                    <input type="number" min={1} value={winPoint} onChange={e => setWinPoint(parseInt(e.target.value) || 1)} className="w-full px-2 h-9 text-base font-mono-num"/>
+                    {tournamentStarted
+                      ? <Static title={lockedTitle}>{winPoint}</Static>
+                      : <input type="number" min={1} value={winPoint} onChange={e => setWinPoint(parseInt(e.target.value) || 1)} className="w-full px-2 h-9 text-base font-mono-num"/>}
                   </Field>
                   <Field label="當前輪次" col={2}>
                     <input type="number" min={1} max={rounds} value={currentRound} onChange={e => setCurrentRound(parseInt(e.target.value) || 1)} className="w-full px-2 h-9 text-base font-mono-num"/>
                   </Field>
                 </div>
+                  );
+                })()}
 
                 {/* 流程提示 */}
                 <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm ${stageBg}`}>
@@ -3081,11 +3100,11 @@ const handleFileUpload = (event) => {
                 </div>
 
                 {/* 主操作 + 輔助操作 */}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={handleDrawLots}
                     disabled={currentRound !== 1}
-                    className="btn-ghost px-4 h-10 rounded-md text-sm flex items-center gap-2"
+                    className="btn-ghost px-4 h-10 rounded-md text-sm flex items-center gap-2 whitespace-nowrap"
                     title={currentRound !== 1 ? '僅第 1 輪可抽籤' : '隨機重排籤號'}
                   >
                     <Icon name="dice" className="w-4 h-4"/> 抽籤
@@ -3093,33 +3112,35 @@ const handleFileUpload = (event) => {
                   <button
                     onClick={generatePairings}
                     disabled={isPairingButtonDisabled}
-                    className="btn-primary px-5 h-10 rounded-md text-sm flex items-center gap-2 flex-1 justify-center"
+                    className="btn-primary px-5 h-10 rounded-md text-sm flex items-center gap-2 flex-1 justify-center whitespace-nowrap"
                   >
                     <Icon name="swap" className="w-4 h-4"/>
                     <span>抓對</span>
-                    <span className="opacity-70 text-sm font-normal">生成 R{currentRound} 桌次</span>
+                    <span className="opacity-70 text-sm font-normal hidden sm:inline">生成 R{currentRound} 桌次</span>
+                    <span className="opacity-70 text-sm font-normal sm:hidden">R{currentRound}</span>
                   </button>
                   <button
                     onClick={calculateScores}
                     disabled={!isPairingButtonDisabled}
-                    className={`px-5 h-10 rounded-md text-sm flex items-center gap-2 flex-1 justify-center font-medium
+                    className={`px-5 h-10 rounded-md text-sm flex items-center gap-2 flex-1 justify-center font-medium whitespace-nowrap
                       ${isPairingButtonDisabled ? 'btn-success' : 'btn-ghost opacity-50 cursor-not-allowed'}`}
                   >
                     <Icon name="calculator" className="w-4 h-4"/>
                     <span>算分</span>
-                    <span className="opacity-70 text-sm font-normal">結算 R{currentRound}</span>
+                    <span className="opacity-70 text-sm font-normal hidden sm:inline">結算 R{currentRound}</span>
+                    <span className="opacity-70 text-sm font-normal sm:hidden">R{currentRound}</span>
                   </button>
 
-                  <div className="w-px h-8 bg-[var(--border-default)] mx-1"/>
+                  <div className="hidden sm:block w-px h-8 bg-[var(--border-default)] mx-1"/>
 
-                  <label className="btn-ghost px-3 h-10 rounded-md text-sm flex items-center gap-1.5 cursor-pointer" title="上傳隊伍表 Excel">
+                  <label className="btn-ghost px-3 h-10 rounded-md text-sm flex items-center gap-1.5 cursor-pointer whitespace-nowrap" title="上傳隊伍表 Excel">
                     <Icon name="upload" className="w-4 h-4"/>
                     <span className="hidden xl:inline">上傳</span>
                     <input type="file" className="hidden" onChange={handleFileUpload} onClick={e => { (e.target as HTMLInputElement).value = ''; }} accept=".xlsx,.xls"/>
                   </label>
                   <button
                     onClick={() => setShowImportExport(v => !v)}
-                    className="btn-ghost px-3 h-10 rounded-md text-sm flex items-center gap-1.5"
+                    className="btn-ghost px-3 h-10 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap"
                     title="匯入/匯出 Excel 與狀態備份"
                   >
                     <Icon name="download" className="w-4 h-4"/>
@@ -3127,7 +3148,7 @@ const handleFileUpload = (event) => {
                   </button>
                   <button
                     onClick={resetSystem}
-                    className="btn-danger px-3 h-10 rounded-md text-sm flex items-center gap-1.5"
+                    className="btn-danger px-3 h-10 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap"
                     title="清除所有資料、回到第 1 輪"
                   >
                     <Icon name="refresh" className="w-4 h-4"/>
@@ -3173,15 +3194,15 @@ const handleFileUpload = (event) => {
         );
       })()}
 
-      {/* ─── 兩欄主內容：左排行榜、右桌次表 ─────────────────── */}
-      <div className="flex-1 flex gap-3 overflow-hidden min-h-0" id="split-container">
-        <div className="flex-shrink-0 min-w-0" style={{ width: `${splitRatio}%` }}>
+      {/* ─── 兩欄主內容：左排行榜、右桌次表（手機堆疊、桌面並排） ─── */}
+      <div className="flex-1 flex flex-col md:flex-row gap-3 md:overflow-hidden md:min-h-0" id="split-container">
+        <div className="split-pane flex-shrink-0 min-w-0" style={{ width: `${splitRatio}%` }}>
           {renderPlayerList()}
         </div>
 
-        {/* 分割線 - 可拖動 */}
+        {/* 分割線 - 可拖動（僅桌面顯示） */}
         <div
-          className="w-1 -mx-1.5 bg-transparent cursor-col-resize hover:bg-[var(--accent-soft)] active:bg-[var(--accent)] flex-shrink-0"
+          className="hidden md:block w-1 -mx-1.5 bg-transparent cursor-col-resize hover:bg-[var(--accent-soft)] active:bg-[var(--accent)] flex-shrink-0"
           onMouseDown={() => {
             const onMove = (ev: MouseEvent) => handleSplitDragChange(ev as any);
             const onUp = () => {
@@ -3193,7 +3214,7 @@ const handleFileUpload = (event) => {
           }}
         />
 
-        <div className="flex-1 min-w-0">
+        <div className="split-pane flex-1 min-w-0">
           {renderRightPane()}
         </div>
       </div>
@@ -3290,15 +3311,22 @@ const handleFileUpload = (event) => {
 };
 
 // Header 設定列：欄位 + 唯讀靜態值
+// 手機（<sm）每欄佔 1 格（2 欄 grid），桌面用 col span（12 欄 grid）
 const Field = ({ label, children, col = 2 }: { label: string; children?: React.ReactNode; col?: number }) => (
-  <div className="flex flex-col gap-1" style={{ gridColumn: `span ${col} / span ${col}` }}>
+  <div
+    className="flex flex-col gap-1 col-span-1"
+    style={{ ['--field-col' as any]: col }}
+  >
     <label className="text-xs uppercase tracking-wider text-[var(--text-muted)] font-semibold">{label}</label>
     {children}
   </div>
 );
 
-const Static = ({ children }: { children?: React.ReactNode }) => (
-  <div className="px-2 h-9 flex items-center text-base text-[var(--text-primary)] bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-md font-medium">
+const Static = ({ children, title }: { children?: React.ReactNode; title?: string }) => (
+  <div
+    className={`px-2 h-9 flex items-center text-base text-[var(--text-primary)] bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-md font-medium ${title ? 'cursor-help' : ''}`}
+    title={title}
+  >
     {children}
   </div>
 );
