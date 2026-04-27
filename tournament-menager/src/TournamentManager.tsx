@@ -2765,19 +2765,19 @@ const handleFileUpload = (event) => {
                   </div>
                   {isBye ? (
                     <>
-                      <Pill tone="muted" size="sm">#{m.player1}</Pill>
+                      <Pill tone="muted" size="sm" className="w-12 justify-center tabular">#{m.player1}</Pill>
                       <span className="text-2xl font-bold truncate flex-1 text-[var(--text-secondary)]">{nameOf(m.player1)}</span>
                       <Pill tone="muted" size="md">輪空</Pill>
                     </>
                   ) : (
                     <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm">#{m.player1}</Pill>
+                        <Pill tone="muted" size="sm" className="w-12 justify-center tabular flex-shrink-0">#{m.player1}</Pill>
                         <span className="text-2xl font-bold truncate">{nameOf(m.player1)}</span>
                       </div>
                       <div className="text-[10px] tracking-[0.3em] text-[var(--text-muted)] font-mono-num font-semibold px-1">VS</div>
                       <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm">#{m.player2}</Pill>
+                        <Pill tone="muted" size="sm" className="w-12 justify-center tabular flex-shrink-0">#{m.player2}</Pill>
                         <span className="text-2xl font-bold truncate">{nameOf(m.player2)}</span>
                       </div>
                     </div>
@@ -2832,7 +2832,7 @@ const handleFileUpload = (event) => {
                   <div className={`font-mono-num font-bold tabular leading-none ${isTop3 ? 'text-3xl' : 'text-2xl text-[var(--text-secondary)]'}`}>{p.rank || '—'}</div>
                   {p.rank && p.rank <= 4 && <div className="text-xs text-[var(--text-muted)] mt-1">{labels[p.rank - 1]}</div>}
                 </div>
-                <Pill tone="muted" size="md">#{p.number}</Pill>
+                <Pill tone="muted" size="md" className="w-16 justify-center tabular flex-shrink-0">#{p.number}</Pill>
                 <div className="flex-1 min-w-0">
                   <div className={`font-bold truncate ${isTop3 ? 'text-5xl' : 'text-4xl'}`}>{p.name}</div>
                 </div>
