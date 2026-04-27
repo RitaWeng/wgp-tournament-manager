@@ -2,12 +2,412 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ────────────────────────────────────────────────────────────────
+ * 主題系統 — 4 種風格透過 data-theme 切換
+ * 來源：design-mock/WGP Tournament Manager.html
+ * ──────────────────────────────────────────────────────────────── */
+
+/* 風格 1：淺色極簡（預設） */
+:root,
+:root[data-theme="light"] {
+  --bg-base: #EBEEF2;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #FBFBFC;
+  --bg-hover: #F1F3F6;
+  --border-subtle: #ECEEF1;
+  --border-default: #DDE0E5;
+  --border-strong: #C5CAD2;
+
+  --text-primary: #15181D;
+  --text-secondary: #4D5460;
+  --text-muted: #868C97;
+  --text-disabled: #B8BDC5;
+
+  --accent: oklch(0.62 0.17 50);
+  --accent-hover: oklch(0.55 0.17 50);
+  --accent-soft: oklch(0.62 0.17 50 / 0.10);
+  --accent-border: oklch(0.62 0.17 50 / 0.35);
+
+  --win: oklch(0.55 0.16 150);
+  --win-soft: oklch(0.55 0.16 150 / 0.10);
+  --loss: oklch(0.55 0.16 25);
+  --loss-soft: oklch(0.55 0.16 25 / 0.08);
+  --info: oklch(0.55 0.16 240);
+  --info-soft: oklch(0.55 0.16 240 / 0.08);
+  --warn: oklch(0.65 0.16 70);
+  --warn-soft: oklch(0.65 0.16 70 / 0.10);
+
+  --gold: oklch(0.70 0.15 85);
+  --silver: oklch(0.70 0.02 250);
+  --bronze: oklch(0.58 0.13 45);
+
+  --font-body: "Inter", "Noto Sans TC", system-ui, sans-serif;
+  --font-display: "Inter", "Noto Sans TC", system-ui, sans-serif;
+  --proj-bg: radial-gradient(ellipse at top, #FFFFFF 0%, #F1F3F6 70%);
+  --shadow-card: 0 1px 2px rgba(15, 20, 30, 0.03);
+}
+
+/* 風格 2：深色競技 */
+:root[data-theme="dark"] {
+  --bg-base: #0B0E13;
+  --bg-surface: #131820;
+  --bg-elevated: #1A2029;
+  --bg-hover: #1F2630;
+  --border-subtle: #1F2630;
+  --border-default: #2A3340;
+  --border-strong: #3A4658;
+
+  --text-primary: #F0F2F5;
+  --text-secondary: #B8BFCC;
+  --text-muted: #7A8294;
+  --text-disabled: #4A5260;
+
+  --accent: oklch(0.75 0.18 55);
+  --accent-hover: oklch(0.82 0.18 55);
+  --accent-soft: oklch(0.75 0.18 55 / 0.14);
+  --accent-border: oklch(0.75 0.18 55 / 0.45);
+
+  --win: oklch(0.72 0.20 150);
+  --win-soft: oklch(0.72 0.20 150 / 0.16);
+  --loss: oklch(0.68 0.22 25);
+  --loss-soft: oklch(0.68 0.22 25 / 0.16);
+  --info: oklch(0.72 0.18 240);
+  --info-soft: oklch(0.72 0.18 240 / 0.14);
+  --warn: oklch(0.78 0.18 70);
+  --warn-soft: oklch(0.78 0.18 70 / 0.14);
+
+  --gold: oklch(0.82 0.17 85);
+  --silver: oklch(0.82 0.02 250);
+  --bronze: oklch(0.68 0.15 45);
+
+  --font-body: "Inter", "Noto Sans TC", system-ui, sans-serif;
+  --font-display: "Inter", "Noto Sans TC", system-ui, sans-serif;
+  --proj-bg: radial-gradient(ellipse at top, #1A2029 0%, #0B0E13 70%);
+  --shadow-card: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+/* 風格 3：紙本資料 */
+:root[data-theme="paper"] {
+  --bg-base: #FFFFFF;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #F5F2EC;
+  --bg-hover: #F0EDE6;
+  --border-subtle: #DCD7CC;
+  --border-default: #B5AE9F;
+  --border-strong: #75705F;
+
+  --text-primary: #1A1814;
+  --text-secondary: #2E2B25;
+  --text-muted: #5C5749;
+  --text-disabled: #9B9685;
+
+  --accent: oklch(0.42 0.18 28);
+  --accent-hover: oklch(0.36 0.18 28);
+  --accent-soft: oklch(0.42 0.18 28 / 0.10);
+  --accent-border: oklch(0.42 0.18 28 / 0.40);
+
+  --win: oklch(0.40 0.14 150);
+  --win-soft: oklch(0.40 0.14 150 / 0.10);
+  --loss: oklch(0.45 0.18 25);
+  --loss-soft: oklch(0.45 0.18 25 / 0.10);
+  --info: oklch(0.42 0.16 240);
+  --info-soft: oklch(0.42 0.16 240 / 0.10);
+  --warn: oklch(0.55 0.16 70);
+  --warn-soft: oklch(0.55 0.16 70 / 0.10);
+
+  --gold: oklch(0.60 0.15 85);
+  --silver: oklch(0.55 0.02 250);
+  --bronze: oklch(0.48 0.13 45);
+
+  --font-body: "Source Sans 3", "Noto Sans TC", system-ui, sans-serif;
+  --font-display: "Source Serif 4", "Noto Serif TC", Georgia, serif;
+  --proj-bg: #FFFFFF;
+  --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.04);
+}
+
+/* 風格 4：午夜寶藍 */
+:root[data-theme="navy"] {
+  --bg-base: #0F1822;
+  --bg-surface: #17222F;
+  --bg-elevated: #1E2B3B;
+  --bg-hover: #243245;
+  --border-subtle: #243245;
+  --border-default: #324358;
+  --border-strong: #4A5C75;
+
+  --text-primary: #EEF3FA;
+  --text-secondary: #B8C4D4;
+  --text-muted: #7A879B;
+  --text-disabled: #4A5668;
+
+  --accent: oklch(0.78 0.14 195);
+  --accent-hover: oklch(0.85 0.14 195);
+  --accent-soft: oklch(0.78 0.14 195 / 0.14);
+  --accent-border: oklch(0.78 0.14 195 / 0.45);
+
+  --win: oklch(0.74 0.18 165);
+  --win-soft: oklch(0.74 0.18 165 / 0.16);
+  --loss: oklch(0.70 0.20 20);
+  --loss-soft: oklch(0.70 0.20 20 / 0.16);
+  --info: oklch(0.75 0.16 230);
+  --info-soft: oklch(0.75 0.16 230 / 0.14);
+  --warn: oklch(0.80 0.17 75);
+  --warn-soft: oklch(0.80 0.17 75 / 0.14);
+
+  --gold: oklch(0.84 0.16 85);
+  --silver: oklch(0.84 0.02 250);
+  --bronze: oklch(0.70 0.14 45);
+
+  --font-body: "Inter", "Noto Sans TC", system-ui, sans-serif;
+  --font-display: "Inter", "Noto Sans TC", system-ui, sans-serif;
+  --proj-bg: radial-gradient(ellipse at top, #1E2B3B 0%, #0F1822 70%);
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * Body 與字體
+ * ──────────────────────────────────────────────────────────────── */
+html, body, #root { height: 100%; }
+html {
+  /* 全域字體基準：Tailwind 的 text-* / spacing 皆基於 rem，調整這裡會等比放大整個 UI */
+  font-size: 18px;
+}
+/* 手機：縮小字體基準，避免整個 UI 被等比放大撐爆 */
+@media (max-width: 640px) {
+  html { font-size: 14px; }
+}
+
+/* 手機：雙欄 split 改堆疊；inline style 設的寬度需強制覆寫為 100% */
+@media (max-width: 767px) {
+  .split-pane { width: 100% !important; min-height: 70vh; }
+}
+
+/* 設定列 Field：桌面（>=sm）依 --field-col 變數展開為 12 欄 grid 的跨欄 */
+@media (min-width: 640px) {
+  [style*="--field-col"] {
+    grid-column: span var(--field-col) / span var(--field-col);
+  }
+}
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: var(--font-body);
+  background: var(--bg-base);
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f5f5f5;
+  font-feature-settings: "ss01", "cv11";
+}
+h1, h2, h3, .display { font-family: var(--font-display); }
+.font-mono-num {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 自訂滾軸
+ * ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* ────────────────────────────────────────────────────────────────
+ * 按鈕系統
+ * ──────────────────────────────────────────────────────────────── */
+.btn-primary {
+  background: var(--accent);
+  color: #FFFFFF;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px -3px oklch(0.62 0.17 50 / 0.45);
+}
+.btn-primary:disabled {
+  background: var(--bg-hover);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+.btn-ghost {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  transition: all 0.15s ease;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.btn-ghost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-success {
+  background: var(--win);
+  color: #FFFFFF;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+.btn-success:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+.btn-danger {
+  background: var(--loss-soft);
+  color: var(--loss);
+  border: 1px solid oklch(0.55 0.16 25 / 0.35);
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+.btn-danger:hover:not(:disabled) {
+  background: oklch(0.55 0.16 25 / 0.15);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * Surface（卡片底）
+ * ──────────────────────────────────────────────────────────────── */
+.surface {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
+}
+.elevated {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 表格
+ * ──────────────────────────────────────────────────────────────── */
+.grid-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.grid-table th {
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 1rem;            /* 與 text-base 內文（如隊伍名）一致 */
+  letter-spacing: 0;
+  text-transform: none;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.grid-table td {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.grid-table tbody tr:hover td {
+  background: var(--bg-hover);
+}
+
+/* 排行榜：醒目欄位（總分、輔一、輔二、輔三）底色 */
+.grid-table td.col-total {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+.grid-table td.col-aux {
+  background: var(--bg-elevated);
+}
+/* sticky 表頭：用不透明底（bg-base）疊上半透明色，避免滾動時下方 td 透出 */
+.grid-table th.col-total {
+  background-color: var(--bg-base);
+  background-image: linear-gradient(var(--accent-soft), var(--accent-soft));
+  color: var(--accent);
+}
+.grid-table th.col-aux {
+  background-color: var(--bg-base);
+  background-image: linear-gradient(var(--bg-elevated), var(--bg-elevated));
+}
+.grid-table tbody tr:hover td.col-total {
+  background: var(--accent-soft);
+  filter: brightness(0.97);
+}
+.grid-table tbody tr:hover td.col-aux {
+  background: var(--bg-hover);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 名次徽章
+ * ──────────────────────────────────────────────────────────────── */
+.rank-medal {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px;
+  font-family: "JetBrains Mono", monospace;
+}
+.rank-1 {
+  background: linear-gradient(135deg, oklch(0.88 0.13 90), oklch(0.78 0.14 70));
+  color: #382800;
+  box-shadow: 0 2px 8px oklch(0.78 0.14 80 / 0.35);
+}
+.rank-2 {
+  background: linear-gradient(135deg, oklch(0.92 0.02 250), oklch(0.78 0.02 250));
+  color: #20242b;
+}
+.rank-3 {
+  background: linear-gradient(135deg, oklch(0.78 0.12 55), oklch(0.62 0.13 45));
+  color: #ffffff;
+}
+.rank-other {
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 動畫
+ * ──────────────────────────────────────────────────────────────── */
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 oklch(0.72 0.16 50 / 0.5); }
+  70%  { box-shadow: 0 0 0 8px oklch(0.72 0.16 50 / 0); }
+  100% { box-shadow: 0 0 0 0 oklch(0.72 0.16 50 / 0); }
+}
+.pulse { animation: pulse-ring 2s infinite; }
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.anim-slide-up { animation: slide-up 0.3s ease-out; }
+
+.step-dot { transition: all 0.2s ease; }
+
+/* ────────────────────────────────────────────────────────────────
+ * 投影模式
+ * ──────────────────────────────────────────────────────────────── */
+.proj-bg { background: var(--proj-bg); }
+.standings-stage {
+  background:
+    radial-gradient(circle at 20% 0%, oklch(0.62 0.17 50 / 0.06), transparent 50%),
+    radial-gradient(circle at 80% 100%, oklch(0.55 0.16 240 / 0.05), transparent 50%),
+    var(--bg-surface);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 表單元件（重構期間：用屬性選擇器套用，避免影響第三方）
+ * ──────────────────────────────────────────────────────────────── */
+input[type="number"], input[type="text"], select, textarea {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  border-radius: 6px;
+}
+input[type="number"]:focus,
+input[type="text"]:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* 簡單實線分隔 */
+.divider-h { height: 1px; background: var(--border-subtle); }
+
+/* glow border for current round indicator */
+.ring-accent {
+  box-shadow: inset 0 0 0 1px var(--accent), 0 0 16px -4px oklch(0.72 0.16 50 / 0.4);
 }

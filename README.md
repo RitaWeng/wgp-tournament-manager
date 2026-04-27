@@ -108,9 +108,30 @@ npm run build
 ### 一般流程
 
 1. 在 `develop` 分支開發新功能、修正
-2. `npm run deploy:preview` → 在 `/preview/` 試用、給人測試
-3. 確認沒問題 → `develop` 合併進 `master`
-4. 切到 `master`，`npm run deploy` → 推上正式版
+2. **升版**（見下節）：`patch` 給 preview、`minor`/`major` 視變更幅度
+3. `npm run deploy:preview` → 在 `/preview/` 試用、給人測試
+4. 確認沒問題 → `develop` 合併進 `master`
+5. 切到 `master`，`npm run deploy` → 推上正式版
+
+### 版本升級
+
+每次 deploy 前先升版，讓 build 進去的 `package.json` 版本號跟「關於」彈窗顯示的版號對得上。
+
+```bash
+cd tournament-menager
+npm version patch   # 1.1.0 → 1.1.1
+```
+
+⚠ **Gotcha**：因為 `package.json` 在子目錄 `tournament-menager/` 而非 git root，`npm version` 只會更新檔案、**不會自動建立 commit 與 tag**（但 `postversion` 仍會跑 `git push`，把現有未推的 commit 推上去，誤以為成功）。需手動補上：
+
+```bash
+git add tournament-menager/package.json tournament-menager/package-lock.json
+git commit -m "chore: bump version to X.Y.Z"
+git tag vX.Y.Z
+git push && git push --tags
+```
+
+之後再跑 `npm run deploy:preview` 或 `npm run deploy`。
 
 ### 注意事項
 
@@ -233,6 +254,7 @@ npm run build
 
 | 日期 | 版本 / Commit | 內容 |
 |------|--------------|------|
+| 2026-04-27 | `v1.2.0` 主題化、行動版、設定鎖定 | **主題系統**：引入 CSS 變數主題架構，新增 4 套主題（light / dark / paper / navy）即時切換，選擇寫入 localStorage；元件統一改用 `.btn-*` / `--text-*` / `--bg-*` token（`15c7f08`、`0fa6278`）。**手機 RWD**：雙欄改堆疊、設定列改 2 欄、桌次配對改上下排版、字體基準 14px、`min-h-[100dvh]` 避 iOS 網址列、投影按鈕在手機隱藏（`c52b24a`）。**設定鎖定**：比賽開始後（已抓對或已算分）自動鎖定參賽隊伍／輪數／勝分為唯讀，避免追溯改寫已紀錄分數（`c52b24a`）。**投影模式精修**：桌次投影對齊名次表風格（色帶 gradient + 同色邊線），桌號直式排列、奇偶桌暖琥珀/冷藍區分（`4970c0b`、`15c7f08`）。**視覺微調**：底色加深（#EBEEF2）；歡迎使用橫幅新增 X 關閉按鈕（`2c88bd4`、`428c7a3`）。**基建**：tsconfig 改用 `moduleResolution: bundler` + target es2017 消除 TS 5.8 deprecation；整併 `.gitignore` 至根目錄（`2dffd71`） |
 | 2026-02-21 | `515978b` update version | 更新程式版本號 |
 | 2026-02-21 | `3154a14` 移除 Electron | 移除 Electron 桌面封裝（`electron.js` 及相關設定），專案改為純線上發布（GitHub Pages） |
 | 2026-02-21 | `5b4f2ca` doc: add readme | 新增 README，說明功能特色、操作流程、瑞士制算法與技術架構 |
