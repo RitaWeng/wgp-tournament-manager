@@ -2402,7 +2402,7 @@ const handleFileUpload = (event) => {
           <div className="flex items-stretch">
             {TableCell}
             <div className="flex-1 flex items-center gap-2 px-3 py-2">
-              <Pill tone="muted" size="sm">#{p1?.number}</Pill>
+              <Pill tone="muted" size="sm" className="w-12 justify-center tabular flex-shrink-0">#{p1?.number}</Pill>
               <span className="font-semibold text-base truncate">{p1?.name}</span>
               <span className="ml-auto"><Pill tone="accent" size="sm">輪空勝</Pill></span>
             </div>
@@ -2427,7 +2427,7 @@ const handleFileUpload = (event) => {
           title={isLocked ? undefined : (isWinner ? `${player.name} 勝` : recorded ? '點擊改為勝方' : '點擊登錄勝')}
         >
           <div className="flex items-center gap-2">
-            <Pill tone="muted" size="sm">#{player.number}</Pill>
+            <Pill tone="muted" size="sm" className="w-12 justify-center tabular flex-shrink-0">#{player.number}</Pill>
             <span className={`font-semibold text-base truncate flex-1 min-w-0 ${isWinner ? 'text-[var(--win)]' : ''}`}>{player.name}</span>
             <span className="text-xs text-[var(--text-muted)] font-mono-num tabular flex-shrink-0">{player.totalScore} 分</span>
             {recorded && isWinner ? (
@@ -2873,13 +2873,15 @@ const handleFileUpload = (event) => {
                   </div>
                   {isBye ? (
                     <>
-                      <Pill tone="muted" size="sm" className="w-14 justify-center tabular !text-2xl !px-1">#{m.player1}</Pill>
-                      <FitText
-                        text={nameOf(m.player1)}
-                        maxFontPx={nameMaxFont}
-                        minFontPx={nameMinFont}
-                        className="flex-1 font-bold text-[var(--text-secondary)]"
-                      />
+                      <div className="flex-1 min-w-0 flex items-center gap-2">
+                        <Pill tone="muted" size="sm" className="w-14 justify-center tabular !text-2xl !px-1 flex-shrink-0">#{m.player1}</Pill>
+                        <FitText
+                          text={nameOf(m.player1)}
+                          maxFontPx={nameMaxFont}
+                          minFontPx={nameMinFont}
+                          className="flex-1 font-bold text-[var(--text-secondary)]"
+                        />
+                      </div>
                       <Pill tone="muted" size="md">輪空</Pill>
                     </>
                   ) : (
