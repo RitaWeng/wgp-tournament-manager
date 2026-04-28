@@ -2873,7 +2873,7 @@ const handleFileUpload = (event) => {
                   </div>
                   {isBye ? (
                     <>
-                      <Pill tone="muted" size="sm" className="w-14 justify-center tabular text-2xl !px-1">#{m.player1}</Pill>
+                      <Pill tone="muted" size="sm" className="w-14 justify-center tabular !text-2xl !px-1">#{m.player1}</Pill>
                       <FitText
                         text={nameOf(m.player1)}
                         maxFontPx={nameMaxFont}
@@ -2885,7 +2885,7 @@ const handleFileUpload = (event) => {
                   ) : (
                     <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm" className="w-14 justify-center tabular text-2xl !px-1 flex-shrink-0">#{m.player1}</Pill>
+                        <Pill tone="muted" size="sm" className="w-14 justify-center tabular !text-2xl !px-1 flex-shrink-0">#{m.player1}</Pill>
                         <FitText
                           text={nameOf(m.player1)}
                           maxFontPx={nameMaxFont}
@@ -2895,7 +2895,7 @@ const handleFileUpload = (event) => {
                       </div>
                       <div className="text-[10px] tracking-[0.3em] text-[var(--text-muted)] font-mono-num font-semibold px-1">VS</div>
                       <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm" className="w-14 justify-center tabular text-2xl !px-1 flex-shrink-0">#{m.player2}</Pill>
+                        <Pill tone="muted" size="sm" className="w-14 justify-center tabular !text-2xl !px-1 flex-shrink-0">#{m.player2}</Pill>
                         <FitText
                           text={nameOf(m.player2)}
                           maxFontPx={nameMaxFont}
