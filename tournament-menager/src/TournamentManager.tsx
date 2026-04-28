@@ -146,11 +146,13 @@ const FitText = ({
   maxFontPx,
   minFontPx,
   className = '',
+  title,
 }: {
   text: string;
   maxFontPx: number;
   minFontPx: number;
   className?: string;
+  title?: string;
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLSpanElement>(null);
@@ -191,6 +193,7 @@ const FitText = ({
       ref={containerRef}
       className={`relative overflow-hidden ${className}`}
       style={{ minWidth: 0 }}
+      title={title}
     >
       <span
         ref={measureRef}
@@ -2403,8 +2406,14 @@ const handleFileUpload = (event) => {
             {TableCell}
             <div className="flex-1 flex items-center gap-2 px-3 py-2">
               <Pill tone="muted" size="sm" className="w-12 justify-center tabular flex-shrink-0">#{p1?.number}</Pill>
-              <span className="font-semibold text-base truncate">{p1?.name}</span>
-              <span className="ml-auto"><Pill tone="accent" size="sm">輪空勝</Pill></span>
+              <FitText
+                text={p1?.name || ''}
+                maxFontPx={16}
+                minFontPx={12}
+                className="flex-1 font-semibold"
+                title={p1?.name}
+              />
+              <Pill tone="accent" size="sm" className="flex-shrink-0">輪空勝</Pill>
             </div>
           </div>
         </div>
@@ -2428,7 +2437,13 @@ const handleFileUpload = (event) => {
         >
           <div className="flex items-center gap-2">
             <Pill tone="muted" size="sm" className="w-12 justify-center tabular flex-shrink-0">#{player.number}</Pill>
-            <span className={`font-semibold text-base truncate flex-1 min-w-0 ${isWinner ? 'text-[var(--win)]' : ''}`}>{player.name}</span>
+            <FitText
+              text={player.name}
+              maxFontPx={16}
+              minFontPx={12}
+              className={`flex-1 font-semibold ${isWinner ? 'text-[var(--win)]' : ''}`}
+              title={player.name}
+            />
             <span className="text-xs text-[var(--text-muted)] font-mono-num tabular flex-shrink-0">{player.totalScore} 分</span>
             {recorded && isWinner ? (
               <span className="flex items-center gap-0.5 text-[var(--win)] text-sm font-semibold flex-shrink-0">
