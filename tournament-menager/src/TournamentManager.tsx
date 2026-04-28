@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 
 // 上傳用於Excel處理的函數
 import * as XLSX from 'xlsx';
@@ -135,6 +135,78 @@ const Card = ({ className, children }) => {
 
 const Divider = ({ className }: { className?: string } = {}) => {
   return <hr className={`my-2 border-t-0 divider-h ${className || ''}`} />;
+};
+
+// ─────────────────────────────────────────────────────────────────
+// FitText — 自動縮字以避免溢出（投影模式長隊名）
+// 容器寬度不夠時，二分搜尋出能塞下的最大字級；最小字級下限仍裝不下才會被裁。
+// ─────────────────────────────────────────────────────────────────
+const FitText = ({
+  text,
+  maxFontPx,
+  minFontPx,
+  className = '',
+}: {
+  text: string;
+  maxFontPx: number;
+  minFontPx: number;
+  className?: string;
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const [fontPx, setFontPx] = useState(maxFontPx);
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const measure = measureRef.current;
+    if (!container || !measure) return;
+
+    const fit = () => {
+      const containerWidth = container.clientWidth;
+      if (containerWidth <= 0) return;
+      let lo = minFontPx;
+      let hi = maxFontPx;
+      let best = minFontPx;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        measure.style.fontSize = `${mid}px`;
+        if (measure.scrollWidth <= containerWidth) {
+          best = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      setFontPx(best);
+    };
+
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [text, maxFontPx, minFontPx]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`relative overflow-hidden ${className}`}
+      style={{ minWidth: 0 }}
+    >
+      <span
+        ref={measureRef}
+        aria-hidden="true"
+        className="invisible absolute left-0 top-0 whitespace-nowrap pointer-events-none"
+      >
+        {text}
+      </span>
+      <span
+        className="block whitespace-nowrap overflow-hidden text-ellipsis"
+        style={{ fontSize: `${fontPx}px`, lineHeight: 1.15 }}
+      >
+        {text}
+      </span>
+    </div>
+  );
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -386,6 +458,9 @@ const TournamentManager = () => {
   const [projectionTitle, setProjectionTitle] = useState<string>('');
   // 投影名次表：只顯示前 N 名（null = 全部）
   const [standingsTopN, setStandingsTopN] = useState<number | null>(null);
+  // 投影桌次表：依容器尺寸與桌數動態計算的卡片寬度（避免桌數少時左右大片留白、字反而被縮小）
+  const tablesLayoutRef = useRef<HTMLDivElement>(null);
+  const [tablesCardWidth, setTablesCardWidth] = useState<number>(480);
   // UI 重構：Header 是否摺疊
   const [headerCollapsed, setHeaderCollapsed] = useState<boolean>(false);
   // UI 重構：左欄排行榜顯示模式（compact = 卡片式、detail = 詳細表格）
@@ -681,6 +756,36 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [projectionMode]);
+
+  // 桌次表投影：依容器尺寸 + 桌數選欄數，再均分得出每張卡片寬度
+  // 桌數少時卡片變寬，FitText 因此能用更大字級顯示
+  useLayoutEffect(() => {
+    if (projectionMode !== 'tables') return;
+    const total = (matchesByRound[selectedRound] || []).length;
+    if (total <= 0) return;
+    const el = tablesLayoutRef.current;
+    if (!el) return;
+
+    const compute = () => {
+      const W = el.clientWidth;
+      const H = el.clientHeight;
+      if (W <= 0 || H <= 0) return;
+      // 卡片大致行高（含 py-3 與 gap-y-2）。實際介於 ~64–96px 之間，用 76 估算夠用
+      const ROW_H = 76;
+      const GAP_Y = 8;
+      const GAP_X = 24; // gap-x-6
+      const rowsPerCol = Math.max(1, Math.floor((H + GAP_Y) / (ROW_H + GAP_Y)));
+      const cols = Math.max(1, Math.ceil(total / rowsPerCol));
+      const ideal = (W - GAP_X * (cols - 1)) / cols - 4; // 預留 4px 緩衝避免擠到下一欄
+      const clamped = Math.max(420, Math.min(960, ideal));
+      setTablesCardWidth(Math.round(clamped));
+    };
+
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [projectionMode, selectedRound, matchesByRound]);
 
   const initializePlayers = (forceNew = forceNewPlayers) => {
     // 檢查是否為現有玩家資料更新
@@ -2730,6 +2835,9 @@ const handleFileUpload = (event) => {
     const matchesForRound = matchesByRound[selectedRound] || [];
     const total = matchesForRound.length;
     const nameOf = (num: number) => players.find(p => p.number === num)?.name || '';
+    // 卡片愈寬，名字字級上限可以拉高（480 → 24、960 → 40）
+    const nameMaxFont = Math.min(40, Math.max(24, Math.round(24 * tablesCardWidth / 480)));
+    const nameMinFont = Math.max(15, Math.round(nameMaxFont * 0.62));
 
     return (
       <div className="flex-1 flex flex-col items-center p-8 overflow-hidden min-h-0 standings-stage">
@@ -2742,7 +2850,7 @@ const handleFileUpload = (event) => {
         {total === 0 ? (
           <div className="flex-1 flex items-center justify-center text-3xl text-[var(--text-muted)]">尚未生成桌次表</div>
         ) : (
-          <div className="flex-1 w-full flex flex-col flex-wrap content-center justify-center items-center gap-x-6 gap-y-2 min-h-0 overflow-hidden">
+          <div ref={tablesLayoutRef} className="flex-1 w-full flex flex-col flex-wrap content-center justify-center items-center gap-x-6 gap-y-2 min-h-0 overflow-hidden">
             {matchesForRound.map((m: any, mi: number) => {
               const isBye = m.player2 === 0;
               const isOdd = m.table % 2 === 1;
@@ -2758,27 +2866,42 @@ const handleFileUpload = (event) => {
                 ? 'text-[oklch(0.55_0.15_85)]'
                 : 'text-[oklch(0.48_0.16_240)]';
               return (
-                <div key={mi} className={`flex items-center gap-4 px-5 py-3 rounded-xl border w-[30rem] ${cardClass}`}>
+                <div key={mi} className={`flex items-center gap-4 px-5 py-3 rounded-xl border ${cardClass}`} style={{ width: `${tablesCardWidth}px` }}>
                   <div className="flex flex-col items-center w-14 flex-shrink-0">
                     <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] leading-none mb-1">桌</div>
                     <div className={`font-mono-num text-3xl font-bold leading-none tabular ${numColor}`}>{isBye ? '—' : m.table}</div>
                   </div>
                   {isBye ? (
                     <>
-                      <Pill tone="muted" size="sm" className="w-12 justify-center tabular">#{m.player1}</Pill>
-                      <span className="text-2xl font-bold truncate flex-1 text-[var(--text-secondary)]">{nameOf(m.player1)}</span>
+                      <Pill tone="muted" size="sm" className="w-14 justify-center tabular text-2xl !px-1">#{m.player1}</Pill>
+                      <FitText
+                        text={nameOf(m.player1)}
+                        maxFontPx={nameMaxFont}
+                        minFontPx={nameMinFont}
+                        className="flex-1 font-bold text-[var(--text-secondary)]"
+                      />
                       <Pill tone="muted" size="md">輪空</Pill>
                     </>
                   ) : (
                     <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm" className="w-12 justify-center tabular flex-shrink-0">#{m.player1}</Pill>
-                        <span className="text-2xl font-bold truncate">{nameOf(m.player1)}</span>
+                        <Pill tone="muted" size="sm" className="w-14 justify-center tabular text-2xl !px-1 flex-shrink-0">#{m.player1}</Pill>
+                        <FitText
+                          text={nameOf(m.player1)}
+                          maxFontPx={nameMaxFont}
+                          minFontPx={nameMinFont}
+                          className="flex-1 font-bold"
+                        />
                       </div>
                       <div className="text-[10px] tracking-[0.3em] text-[var(--text-muted)] font-mono-num font-semibold px-1">VS</div>
                       <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm" className="w-12 justify-center tabular flex-shrink-0">#{m.player2}</Pill>
-                        <span className="text-2xl font-bold truncate">{nameOf(m.player2)}</span>
+                        <Pill tone="muted" size="sm" className="w-14 justify-center tabular text-2xl !px-1 flex-shrink-0">#{m.player2}</Pill>
+                        <FitText
+                          text={nameOf(m.player2)}
+                          maxFontPx={nameMaxFont}
+                          minFontPx={nameMinFont}
+                          className="flex-1 font-bold"
+                        />
                       </div>
                     </div>
                   )}
@@ -2834,7 +2957,12 @@ const handleFileUpload = (event) => {
                 </div>
                 <Pill tone="muted" size="md" className="w-16 justify-center tabular flex-shrink-0">#{p.number}</Pill>
                 <div className="flex-1 min-w-0">
-                  <div className={`font-bold truncate ${isTop3 ? 'text-5xl' : 'text-4xl'}`}>{p.name}</div>
+                  <FitText
+                    text={p.name}
+                    maxFontPx={isTop3 ? 48 : 36}
+                    minFontPx={isTop3 ? 28 : 22}
+                    className="font-bold"
+                  />
                 </div>
                 <div className="text-right">
                   <div className={`font-mono-num font-bold tabular ${isTop3 ? 'text-6xl' : 'text-5xl'}`}>{p.totalScore}</div>
