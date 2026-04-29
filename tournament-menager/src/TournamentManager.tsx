@@ -2880,16 +2880,19 @@ const handleFileUpload = (event) => {
                 : isOdd
                 ? 'text-[oklch(0.55_0.15_85)]'
                 : 'text-[oklch(0.48_0.16_240)]';
+              const pillColor = isBye
+                ? '!text-[var(--text-secondary)] !font-bold'
+                : '!text-[var(--text-primary)] !font-bold';
               return (
                 <div key={mi} className={`flex items-center gap-4 px-5 py-3 rounded-xl border ${cardClass}`} style={{ width: `${tablesCardWidth}px` }}>
                   <div className="flex flex-col items-center w-14 flex-shrink-0">
                     <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] leading-none mb-1">桌</div>
-                    <div className={`font-mono-num text-3xl font-bold leading-none tabular ${numColor}`}>{isBye ? '—' : m.table}</div>
+                    <div className={`font-mono-num text-3xl font-extrabold leading-none tabular ${numColor}`}>{isBye ? '—' : m.table}</div>
                   </div>
                   {isBye ? (
                     <>
                       <div className="flex-1 min-w-0 flex items-center gap-2">
-                        <Pill tone="muted" size="sm" className="w-14 justify-center tabular !text-2xl !px-1 flex-shrink-0">#{m.player1}</Pill>
+                        <Pill tone="muted" size="sm" className={`w-14 justify-center tabular !text-2xl !px-1 flex-shrink-0 ${pillColor}`}>#{m.player1}</Pill>
                         <FitText
                           text={nameOf(m.player1)}
                           maxFontPx={nameMaxFont}
@@ -2902,7 +2905,7 @@ const handleFileUpload = (event) => {
                   ) : (
                     <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm" className="w-14 justify-center tabular !text-2xl !px-1 flex-shrink-0">#{m.player1}</Pill>
+                        <Pill tone="muted" size="sm" className={`w-14 justify-center tabular !text-2xl !px-1 flex-shrink-0 ${pillColor}`}>#{m.player1}</Pill>
                         <FitText
                           text={nameOf(m.player1)}
                           maxFontPx={nameMaxFont}
@@ -2912,7 +2915,7 @@ const handleFileUpload = (event) => {
                       </div>
                       <div className="text-[10px] tracking-[0.3em] text-[var(--text-muted)] font-mono-num font-semibold px-1">VS</div>
                       <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm" className="w-14 justify-center tabular !text-2xl !px-1 flex-shrink-0">#{m.player2}</Pill>
+                        <Pill tone="muted" size="sm" className={`w-14 justify-center tabular !text-2xl !px-1 flex-shrink-0 ${pillColor}`}>#{m.player2}</Pill>
                         <FitText
                           text={nameOf(m.player2)}
                           maxFontPx={nameMaxFont}
