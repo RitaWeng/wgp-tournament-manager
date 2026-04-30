@@ -461,9 +461,13 @@ const TournamentManager = () => {
   const [projectionTitle, setProjectionTitle] = useState<string>('');
   // 投影名次表：只顯示前 N 名（null = 全部）
   const [standingsTopN, setStandingsTopN] = useState<number | null>(null);
-  // 投影桌次表：依容器尺寸與桌數動態計算的卡片寬度（避免桌數少時左右大片留白、字反而被縮小）
+  // 投影桌次表：依容器尺寸與桌數動態計算 — 卡片寬、欄數、列數、每列高
+  // 演算法挑「能塞下的最少欄數」以最大化卡片寬度，再用 grid 強制每欄列數相同
   const tablesLayoutRef = useRef<HTMLDivElement>(null);
   const [tablesCardWidth, setTablesCardWidth] = useState<number>(480);
+  const [tablesCols, setTablesCols] = useState<number>(2);
+  const [tablesRowsPerCol, setTablesRowsPerCol] = useState<number>(1);
+  const [tablesRowH, setTablesRowH] = useState<number>(76);
   // UI 重構：Header 是否摺疊
   const [headerCollapsed, setHeaderCollapsed] = useState<boolean>(false);
   // UI 重構：左欄排行榜顯示模式（compact = 卡片式、detail = 詳細表格）
@@ -760,8 +764,8 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     return () => window.removeEventListener('keydown', onKey);
   }, [projectionMode]);
 
-  // 桌次表投影：依容器尺寸 + 桌數選欄數，再均分得出每張卡片寬度
-  // 桌數少時卡片變寬，FitText 因此能用更大字級顯示
+  // 桌次表投影：選「能塞下的最少欄數」最大化卡片寬度，再用 grid 平均分配每欄列數
+  // 卡片愈寬 + 列高愈寬鬆，FitText 才有空間用更大字級
   useLayoutEffect(() => {
     if (projectionMode !== 'tables') return;
     const total = (matchesByRound[selectedRound] || []).length;
@@ -773,15 +777,28 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
       const W = el.clientWidth;
       const H = el.clientHeight;
       if (W <= 0 || H <= 0) return;
-      // 卡片大致行高（含 py-3 與 gap-y-2）。實際介於 ~64–96px 之間，用 76 估算夠用
-      const ROW_H = 76;
       const GAP_Y = 8;
-      const GAP_X = 24; // gap-x-6
-      const rowsPerCol = Math.max(1, Math.floor((H + GAP_Y) / (ROW_H + GAP_Y)));
-      const cols = Math.max(1, Math.ceil(total / rowsPerCol));
-      const ideal = (W - GAP_X * (cols - 1)) / cols - 4; // 預留 4px 緩衝避免擠到下一欄
-      const clamped = Math.max(420, Math.min(960, ideal));
-      setTablesCardWidth(Math.round(clamped));
+      const GAP_X = 24;
+      const ROW_H_EST = 76;   // 估算每張卡的高度（含 padding 與 gap）以推算可塞列數
+      const MAX_ROW_H = 132;  // 上限避免列高過大造成卡片之間被空白拉開
+      const MIN_W = 420;
+      const MAX_W = 960;
+
+      // 1) 用 ROW_H_EST 估出單欄能塞幾列，反推欄數（與舊版邏輯相容，避免少桌數時退成 1 欄）
+      const rowsPerColEst = Math.max(1, Math.floor((H + GAP_Y) / (ROW_H_EST + GAP_Y)));
+      const chosenCols = Math.max(1, Math.ceil(total / rowsPerColEst));
+      // 2) 再用 ceil(total/cols) 平均分配每欄列數（搭配 grid 強制每欄相同列數）
+      const chosenRows = Math.ceil(total / chosenCols);
+
+      const idealW = (W - GAP_X * (chosenCols - 1)) / chosenCols - 4;
+      const cardW = Math.max(MIN_W, Math.min(MAX_W, idealW));
+      const idealRowH = (H - GAP_Y * (chosenRows - 1)) / chosenRows;
+      const rowH = Math.max(ROW_H_EST, Math.min(MAX_ROW_H, idealRowH));
+
+      setTablesCardWidth(Math.round(cardW));
+      setTablesCols(chosenCols);
+      setTablesRowsPerCol(chosenRows);
+      setTablesRowH(Math.round(rowH));
     };
 
     compute();
@@ -2408,8 +2425,8 @@ const handleFileUpload = (event) => {
               <Pill tone="muted" size="sm" className="w-12 justify-center tabular flex-shrink-0">#{p1?.number}</Pill>
               <FitText
                 text={p1?.name || ''}
-                maxFontPx={16}
-                minFontPx={12}
+                maxFontPx={20}
+                minFontPx={14}
                 className="flex-1 font-semibold"
                 title={p1?.name}
               />
@@ -2439,8 +2456,8 @@ const handleFileUpload = (event) => {
             <Pill tone="muted" size="sm" className="w-12 justify-center tabular flex-shrink-0">#{player.number}</Pill>
             <FitText
               text={player.name}
-              maxFontPx={16}
-              minFontPx={12}
+              maxFontPx={20}
+              minFontPx={14}
               className={`flex-1 font-semibold ${isWinner ? 'text-[var(--win)]' : ''}`}
               title={player.name}
             />
@@ -2850,8 +2867,10 @@ const handleFileUpload = (event) => {
     const matchesForRound = matchesByRound[selectedRound] || [];
     const total = matchesForRound.length;
     const nameOf = (num: number) => players.find(p => p.number === num)?.name || '';
-    // 卡片愈寬，名字字級上限可以拉高（480 → 24、960 → 40）
-    const nameMaxFont = Math.min(40, Math.max(24, Math.round(24 * tablesCardWidth / 480)));
+    // 字級上限同時參考卡片寬度與每張卡可用垂直空間：欄數少（卡片寬）+ 列高寬鬆 → 字可以更大
+    const widthCap = tablesCardWidth * 0.06;
+    const heightCap = tablesRowH * 0.45;
+    const nameMaxFont = Math.min(48, Math.max(24, Math.round(Math.min(widthCap, heightCap))));
     const nameMinFont = Math.max(15, Math.round(nameMaxFont * 0.62));
 
     return (
@@ -2865,7 +2884,17 @@ const handleFileUpload = (event) => {
         {total === 0 ? (
           <div className="flex-1 flex items-center justify-center text-3xl text-[var(--text-muted)]">尚未生成桌次表</div>
         ) : (
-          <div ref={tablesLayoutRef} className="flex-1 w-full flex flex-col flex-wrap content-center justify-center items-center gap-x-6 gap-y-2 min-h-0 overflow-hidden">
+          <div
+            ref={tablesLayoutRef}
+            className="flex-1 w-full min-h-0 overflow-hidden grid content-center justify-center"
+            style={{
+              gridTemplateColumns: `repeat(${tablesCols}, ${tablesCardWidth}px)`,
+              gridTemplateRows: `repeat(${tablesRowsPerCol}, auto)`,
+              gridAutoFlow: 'column',
+              columnGap: '24px',
+              rowGap: '8px',
+            }}
+          >
             {matchesForRound.map((m: any, mi: number) => {
               const isBye = m.player2 === 0;
               const isOdd = m.table % 2 === 1;
