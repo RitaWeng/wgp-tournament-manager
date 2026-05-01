@@ -1018,7 +1018,16 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     const getScore   = (idx) => idx < playerCount ? sortedPlayers[idx].totalScore : -Infinity;
     const getCountry = (idx) => idx < playerCount ? (sortedPlayers[idx].country || '') : '';
 
+    // 判斷某選手是否曾被輪空過（rounds 中有 opponent === 0 的紀錄）
+    const hasReceivedBye = (idx) => {
+      if (idx >= playerCount) return false;
+      return sortedPlayers[idx].rounds.some(r => r.opponent === 0);
+    };
+
     const hasPlayedBefore = (idx1, idx2) => {
+      // 虛擬輪空槽 vs 真實選手：若該選手已輪空過，視為「已配過」以避免重複輪空
+      if (idx1 >= playerCount && idx2 < playerCount) return hasReceivedBye(idx2);
+      if (idx2 >= playerCount && idx1 < playerCount) return hasReceivedBye(idx1);
       if (idx1 >= playerCount || idx2 >= playerCount) return false;
       const p2Num = getNum(idx2);
       return sortedPlayers[idx1].rounds.some(r => r.opponent === p2Num);
@@ -1145,7 +1154,11 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
             nowGroup--;
             continue reCrawlLoop;
           } else {
-            alert('無法完成配對，請確認選手資料是否正常。');
+            const allByed = sortedPlayers.every(p => p.rounds.some(r => r.opponent === 0));
+            const hint = isOdd && allByed
+              ? '所有選手都已輪空過，無法再安排輪空。'
+              : '可能因為剩餘可配對選手都已對戰過，或同國衝突無解。';
+            alert(`無法完成第 ${currentRound} 輪配對。\n${hint}\n\n建議：檢查選手資料、考慮減少輪數，或調整「允許同國對戰」設定。`);
             return;
           }
         }
