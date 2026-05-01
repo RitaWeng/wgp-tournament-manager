@@ -1858,44 +1858,49 @@ const handleFileUpload = (event) => {
         'rank', 'Rank', 'rating', 'Rating', 'class', 'Class'
       ];
       
-      // 嘗試查找合適的欄位名稱
+      // 檢查是否找到了必要欄位（標頭驗證）
       console.log("檢查是否可找到必要欄位...");
       const sampleRow = jsonData[0];
-      
-      // 嘗試找到籤號欄位
-      const possibleNumberField = numberFieldNames.find(fieldName => 
-        sampleRow[fieldName] !== undefined
+      const headerKeys = Object.keys(sampleRow);
+      // xlsx 對空標頭儲存格會自動命名為 __EMPTY、__EMPTY_1...，需排除
+      const meaningfulHeaders = headerKeys.filter(k => k && !k.startsWith('__EMPTY'));
+      console.log("偵測到的標頭:", headerKeys, "有效標頭:", meaningfulHeaders);
+
+      const formatHint = '請確保 Excel 第一列為欄位標頭（不要先放標題列或空白列），且需包含「籤號」與「隊伍」兩個欄位，從第二列開始輸入資料。可接受的標頭名稱：籤號／編號／No、隊伍／隊名／團隊／名稱、國家／城市（選填）、段位／級別（選填）。';
+
+      // 案例 1：整張表只有一欄（例如把籤號和隊伍寫在同一格）
+      if (headerKeys.length < 2) {
+        const onlyHeader = headerKeys[0] || '(空)';
+        throw new Error(`Excel 僅偵測到一個欄位（${onlyHeader}）。請將「籤號」與「隊伍」分別放在不同欄位（例如 A 欄為籤號、B 欄為隊伍），不要寫在同一格。`);
+      }
+
+      // 案例 2：第一列完全沒有有效標頭（全部空白或非預期內容）
+      if (meaningfulHeaders.length === 0) {
+        throw new Error(`找不到欄位標頭。${formatHint}`);
+      }
+
+      // 嘗試找到籤號 / 隊伍欄位
+      const possibleNumberField = numberFieldNames.find(fieldName =>
+        meaningfulHeaders.includes(fieldName)
       );
-      
-      // 嘗試找到隊伍名稱欄位
-      const possibleNameField = nameFieldNames.find(fieldName => 
-        sampleRow[fieldName] !== undefined
+      const possibleNameField = nameFieldNames.find(fieldName =>
+        meaningfulHeaders.includes(fieldName)
       );
-      
+
       console.log("可能的籤號欄位:", possibleNumberField);
       console.log("可能的隊伍欄位:", possibleNameField);
-      
-      // 檢查是否找到了必要欄位
+
+      // 案例 3：兩個必要欄位都找不到
       if (!possibleNumberField && !possibleNameField) {
-        console.log("數據欄位示例:", Object.keys(sampleRow));
-        // 嘗試使用任何可能是數字的欄位作為籤號
-        const anyNumberField = Object.keys(sampleRow).find(key => {
-          const value = sampleRow[key];
-          return !isNaN(parseInt(value));
-        });
-        
-        // 嘗試使用任何可能是字串的欄位作為隊伍名稱
-        const anyStringField = Object.keys(sampleRow).find(key => {
-          const value = sampleRow[key];
-          return typeof value === 'string' && value.trim() !== '';
-        });
-        
-        console.log("備用籤號欄位:", anyNumberField);
-        console.log("備用隊伍欄位:", anyStringField);
-        
-        if (!anyNumberField || !anyStringField) {
-          throw new Error('無法辨識必要欄位（籤號和隊伍名稱）。請確保Excel表格包含這些欄位，並且欄位名稱明確。');
-        }
+        throw new Error(`找不到「籤號」與「隊伍」欄位標頭。目前偵測到的標頭：${meaningfulHeaders.join('、')}。${formatHint}`);
+      }
+      // 案例 4：只有籤號欄位
+      if (!possibleNameField) {
+        throw new Error(`找不到「隊伍」欄位標頭。目前偵測到的標頭：${meaningfulHeaders.join('、')}。請在第一列加入「隊伍」欄位（其他可接受名稱：隊名、團隊、名稱）。`);
+      }
+      // 案例 5：只有隊伍欄位
+      if (!possibleNumberField) {
+        throw new Error(`找不到「籤號」欄位標頭。目前偵測到的標頭：${meaningfulHeaders.join('、')}。請在第一列加入「籤號」欄位（其他可接受名稱：編號、No、序號）。`);
       }
       
       // 解析所有列，收集成功項目，再統一決定隊伍總數
@@ -1905,21 +1910,9 @@ const handleFileUpload = (event) => {
       console.log("開始解析隊伍資料...");
 
       jsonData.forEach((row, rowIndex) => {
-        // 獲取籤號，如果是字串，轉換為數字
+        // 獲取籤號（已驗證標頭存在，不再猜其他欄位）
         let numberValue = getValueByPossibleFieldNames(row, numberFieldNames);
-
-        // 如果找不到標準籤號欄位，嘗試使用任何數字欄位
-        if (numberValue === null) {
-          for (const key in row) {
-            const value = row[key];
-            if (!isNaN(parseInt(value))) {
-              numberValue = value;
-              break;
-            }
-          }
-        }
-
-        let number;
+        let number = NaN;
         if (numberValue !== null) {
           if (typeof numberValue === 'string') {
             numberValue = numberValue.replace(/[^0-9]/g, '');
@@ -1928,16 +1921,7 @@ const handleFileUpload = (event) => {
         }
 
         // 獲取隊伍名稱
-        let name = getValueByPossibleFieldNames(row, nameFieldNames);
-        if (!name) {
-          for (const key in row) {
-            const value = row[key];
-            if (typeof value === 'string' && value.trim() !== '' && key !== possibleNumberField) {
-              name = value;
-              break;
-            }
-          }
-        }
+        const name = getValueByPossibleFieldNames(row, nameFieldNames);
 
         console.log(`第 ${rowIndex + 1} 行解析結果: 籤號=${number}, 隊伍=${name}`);
 
