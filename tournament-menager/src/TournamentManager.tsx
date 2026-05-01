@@ -1346,42 +1346,46 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
 
     // 深拷貝玩家數據
     const updatedPlayers = JSON.parse(JSON.stringify(players));
-    
-    // 計算每輪的分數
-    matches.forEach(match => {
+
+    // 計算每輪的分數，並產出新的對戰陣列（輪空場次補上勝分；不變異原 state 物件）
+    const updatedRoundMatches = matches.map(match => {
       const p1Index = updatedPlayers.findIndex(p => p.number === match.player1);
       const p2Index = match.player2 === 0 ? -1 : updatedPlayers.findIndex(p => p.number === match.player2);
-      
+
       // 如果有比賽結果或是輪空情況
       if (match.player1Score !== undefined && match.player1Score !== null) {
-        // 更新選手1的記錄
         updatedPlayers[p1Index].rounds[match.round - 1] = {
           score: match.player1Score,
           opponent: match.player2,
           isBlack: match.player1IsBlack
         };
-        
-        // 更新選手2的記錄 (如果不是輪空)
+
         if (p2Index !== -1) {
           updatedPlayers[p2Index].rounds[match.round - 1] = {
-            score: winPoint - match.player1Score, // 對手的分數
+            score: winPoint - match.player1Score,
             opponent: match.player1,
             isBlack: !match.player1IsBlack
           };
         }
+        return match;
       }
+
       // 自動處理輪空情況 - 確保輪空選手得到勝分
-      else if (match.player2 === 0) {
-        // 輪空選手自動得到勝分
+      if (match.player2 === 0) {
         updatedPlayers[p1Index].rounds[match.round - 1] = {
-          score: winPoint, // 輪空獲得勝分
-          opponent: 0, // 輪空
+          score: winPoint,
+          opponent: 0,
           isBlack: match.player1IsBlack
         };
-        // 設置比賽結果，以便顯示
-        match.player1Score = winPoint;
+        return { ...match, player1Score: winPoint };
       }
+
+      return match;
     });
+
+    // 將輪空場次的勝分回寫到 state（取代原本的直接變異）
+    setMatchesByRound(prev => ({ ...prev, [currentRound]: updatedRoundMatches }));
+    setMatches(updatedRoundMatches);
     
     // 計算總分
     updatedPlayers.forEach(player => {
@@ -3350,10 +3354,10 @@ const handleFileUpload = (event) => {
         <div className="space-y-3">
           <p className="text-[var(--text-muted)]">排名依以下順序依序比較：</p>
           <div className="space-y-2">
-            <div className="flex gap-2"><Pill tone="accent" size="xs" className="flex-shrink-0 mt-0.5">總分</Pill><div>每輪勝者獲得勝方得分，敗者得 0 分，輪空獲得勝方得分。</div></div>
-            <div className="flex gap-2"><Pill tone="accent" size="xs" className="flex-shrink-0 mt-0.5">輔分一</Pill><div>所遇對手之總分和。所有對手（不含輪空）的最終總分加總。</div></div>
-            <div className="flex gap-2"><Pill tone="accent" size="xs" className="flex-shrink-0 mt-0.5">輔分二</Pill><div>所負對手之總分和。僅計算落敗場次中對手的最終總分加總。</div></div>
-            <div className="flex gap-2"><Pill tone="accent" size="xs" className="flex-shrink-0 mt-0.5">輔分三</Pill><div>直接對戰結果。僅在前述均相同時啟用。</div></div>
+            <div className="flex gap-2 items-start"><Pill tone="accent" size="sm" className="w-14 justify-center flex-shrink-0 mt-0.5">總分</Pill><div>每輪勝者獲得勝方得分，敗者得 0 分，輪空獲得勝方得分。</div></div>
+            <div className="flex gap-2 items-start"><Pill tone="accent" size="sm" className="w-14 justify-center flex-shrink-0 mt-0.5">輔分一</Pill><div>所遇對手之總分和。各對手最終總分加總。</div></div>
+            <div className="flex gap-2 items-start"><Pill tone="accent" size="sm" className="w-14 justify-center flex-shrink-0 mt-0.5">輔分二</Pill><div>所負對手之總分和。僅計算落敗場次中對手的最終總分加總。</div></div>
+            <div className="flex gap-2 items-start"><Pill tone="accent" size="sm" className="w-14 justify-center flex-shrink-0 mt-0.5">輔分三</Pill><div>直接對戰結果。僅在前述均相同時啟用。</div></div>
           </div>
           <p className="text-xs text-[var(--text-disabled)]">* 輪空場次不計入輔分計算。</p>
           <div className="pt-2 text-right">
