@@ -25,6 +25,11 @@ yarn-error.log*
 excel_data.json
 vba_output.txt
 
+# 例外：tests/fixtures/ 下的 Excel 已做去識別化處理，可上版控
+!tests/fixtures/*.xlsx
+# 但仍排除備份檔（*.bak 等）
+tests/fixtures/*.bak
+
 # 本機驗證／模擬腳本（依賴上述資料檔才能跑）
 simulate_tournament.py
 verify_fixes.py

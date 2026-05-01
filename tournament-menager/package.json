@@ -11,7 +11,8 @@
         "deploy:preview": "npm run build && gh-pages -d dist -e preview --repo https://github.com/RitaWeng/wgp-tournament-manager.git",
         "preversion": "git diff --exit-code && git diff --cached --exit-code",
         "postversion": "git push && git push --tags",
-        "test": "echo \"Error: no test specified\" && exit 1"
+        "test:regression": "node ../tests/regression/replay_excel.js",
+        "test": "npm run test:regression"
     },
     "author": "Rita Weng <rita6656@gmail.com>",
     "license": "ISC",

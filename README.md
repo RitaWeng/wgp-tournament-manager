@@ -142,6 +142,24 @@ git push && git push --tags
 
 ---
 
+## 回歸測試
+
+每次改版（尤其改動到抓對 / 算分邏輯）都應跑一次回歸測試。
+
+```bash
+cd tournament-menager
+npm run test:regression
+# 或：node tests/regression/replay_excel.js（從專案根目錄）
+```
+
+測試以歷年比賽 Excel（`tests/fixtures/`）為 ground truth，逐輪把實際結果餵回演算法、比對程式產出的對局是否與真實賽事 100% 吻合。回傳碼：`0` 全通過、`1` 有差異、`2` 找不到 fixture。
+
+**Fixture 為去識別化版本**：`tests/fixtures/` 下的 Excel 已將學校名稱替換為 `學校NN`（保留 A/B/C 隊伍後綴），其餘數值欄位完全保留。`.gitignore` 對該目錄設了例外放行，clone 後即可直接跑測試。新增其他歷史比賽 fixture 的去識別化規則與步驟見 [`tests/README.md`](tests/README.md)。
+
+⚠ **限制**：`tests/regression/replay_excel.js` 是 `TournamentManager.tsx` 抓對演算法的手動 port，改 TSX 時必須同步改測試腳本，否則會「假性通過」。將來建議把演算法抽到獨立模組讓兩邊共用。
+
+---
+
 ## 技術架構
 
 | 類別 | 使用技術 |
@@ -209,7 +227,7 @@ git push && git push --tags
 位置 15 的低分選手被納入高分組配對，符合瑞士制「奇數組借人」規則，而非算法錯誤。
 
 **驗證結果**
-以 2025 南北區比賽 Excel 實際記錄逐輪驗證：北區 29 隊 × 5 輪（75 場）、南區 22 隊 × 4 輪（44 場），**配對吻合率 100%**，所有輔分亦與 Excel 完全一致。
+以 2025 南北區比賽 Excel 實際記錄逐輪驗證：北區 29 隊 × 5 輪（75 場）、南區 22 隊 × 4 輪（44 場），**配對吻合率 100%**，所有輔分亦與 Excel 完全一致。驗證腳本見 [`tests/regression/replay_excel.js`](tests/regression/replay_excel.js)（執行方式見「回歸測試」章節）。
 
 ---
 
