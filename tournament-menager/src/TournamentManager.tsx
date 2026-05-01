@@ -423,7 +423,6 @@ const TournamentManager = () => {
   // 狀態管理
   const [allPlayers, setAllPlayers] = useState(10);
   const [rounds, setRounds] = useState(5);
-  const [gameType, setGameType] = useState('瑞士制');
   const [winPoint, setWinPoint] = useState(1);
   const [players, setPlayers] = useState([]);
   // const [matches, setMatches] = useState([]);
@@ -504,7 +503,6 @@ const TournamentManager = () => {
       const appState = {
         allPlayers,
         rounds,
-        gameType,
         winPoint,
         players,
         matches,
@@ -549,7 +547,6 @@ const TournamentManager = () => {
       // 恢復各個狀態
       setAllPlayers(appState.allPlayers);
       setRounds(appState.rounds);
-      setGameType(appState.gameType);
       setWinPoint(appState.winPoint);
       setPlayers(appState.players);
       setMatches(appState.matches);
@@ -590,7 +587,6 @@ const TournamentManager = () => {
       const appState = {
         allPlayers,
         rounds,
-        gameType,
         winPoint,
         players,
         matches,
@@ -648,7 +644,6 @@ const TournamentManager = () => {
         // 恢復各個狀態
         setAllPlayers(appState.allPlayers);
         setRounds(appState.rounds);
-        setGameType(appState.gameType);
         setWinPoint(appState.winPoint);
         setPlayers(appState.players);
         setMatches(appState.matches);
@@ -743,7 +738,7 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     if (players.length > 0) {
       saveStateToLocalStorage();
     }
-  }, [allPlayers, rounds, gameType, winPoint, players, matches, matchesByRound, sortByRank, allowSameCountry, currentRound, gameTitle, selectedRound, isPairingButtonDisabled, showAuxScoreHelp, scoredRounds, projectionTitle, standingsTopN]);
+  }, [allPlayers, rounds, winPoint, players, matches, matchesByRound, sortByRank, allowSameCountry, currentRound, gameTitle, selectedRound, isPairingButtonDisabled, showAuxScoreHelp, scoredRounds, projectionTitle, standingsTopN]);
   
   // 在組件卸載前執行最後一次保存
   useEffect(() => {
@@ -929,12 +924,8 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     }
     
     // 繼續正常的抓對流程
-    if (gameType === '瑞士制') {
-      generateSwissPairings();
-    } else if (gameType === '單循環') {
-      generateRoundRobinPairings();
-    }
-    
+    generateSwissPairings();
+
     // 更新選中的輪次為當前輪次
     setSelectedRound(currentRound);
     
@@ -1223,73 +1214,6 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
 
     setMatches(newMatches);
   };
-  // 單循環配對
-  const generateRoundRobinPairings = () => {
-    // 實現單循環配對邏輯
-    // 這裡使用貝格爾表(Berger tables)算法生成單循環配對
-    const n = allPlayers;
-    
-    // 如果是奇數，添加一個虛擬選手 (0) 表示輪空
-    const adjustedN = n % 2 === 0 ? n : n + 1;
-    const allRoundMatches = {}; // 儲存所有輪次的配對
-    
-    for (let round = 1; round <= rounds; round++) {
-      const roundMatches = [];
-      
-      for (let i = 0; i < adjustedN / 2; i++) {
-        let player1 = (round + i) % (adjustedN - 1);
-        player1 = player1 === 0 ? adjustedN - 1 : player1;
-        
-        let player2 = (adjustedN - 1 - i + round) % (adjustedN - 1);
-        player2 = player2 === 0 ? adjustedN - 1 : player2;
-        
-        if (i === 0) {
-          player2 = adjustedN;
-        }
-        
-        // 調整為實際選手編號
-        const p1 = player1 > n ? 0 : player1;
-        const p2 = player2 > n ? 0 : player2;
-        
-        if (p1 !== 0 && p2 !== 0) {
-          roundMatches.push({
-            table: roundMatches.length + 1,
-            player1: p1,
-            player2: p2,
-            round: round,
-            player1IsBlack: round % 2 === 1 // 奇數輪第一位是黑方
-          });
-        }
-      }
-      
-      // 儲存每一輪的配對
-      allRoundMatches[round] = roundMatches;
-    }
-    
-    // 更新當前輪次的桌次
-    setMatches(allRoundMatches[currentRound] || []);
-    
-    // 更新 matchesByRound
-    setMatchesByRound(prev => {
-      // 創建新的 matchesByRound 狀態
-      const updatedMatchesByRound = {};
-      
-      // 複製之前的輪次資料，只保留不大於當前輪次的輪次
-      Object.keys(prev).forEach(round => {
-        const roundNum = parseInt(round, 10);
-        if (roundNum < currentRound) { // 注意這裡只保留之前輪次的記錄
-          updatedMatchesByRound[roundNum] = prev[roundNum];
-        }
-      });
-      
-      // 添加或更新當前輪次的資料
-      updatedMatchesByRound[currentRound] = allRoundMatches[currentRound] || [];
-      
-      return updatedMatchesByRound;
-    });
-    
-  };
-
   // 決定誰先手 (黑方)
   const determineFirstMove = (player1, player2, round) => {
     // 計算兩位選手之前當黑方的次數
@@ -2239,20 +2163,17 @@ const handleFileUpload = (event) => {
     if (!window.confirm('確定要重設系統嗎？\n所有輪次的桌次、比賽結果及選手資料將全部清除，此操作無法復原。')) return;
 
     // 檢查瑞士制輪數設定
-    if (gameType === '瑞士制') {
-      const maxRounds = Math.ceil(Math.log2(allPlayers));
-      const minRounds = Math.ceil(Math.log2(allPlayers));
-      
-      if (rounds > (allPlayers % 2 === 1 ? allPlayers : allPlayers - 1)) {
-        message.warning(`瑞士制輪數設定過多，將造成最後無法抓對。
-參賽 ${allPlayers} 人建議可採 ${allPlayers % 2 === 1 ? allPlayers : allPlayers - 1} 輪單循環賽制，或 ${allPlayers % 2 === 1 ? allPlayers : allPlayers - 1} 輪以下的瑞士制`);
-        return;
-      }
-      
-      if (Math.pow(2, rounds) < allPlayers) {
-        message.warning(`${rounds} 輪瑞士制在參賽人數超過 ${Math.pow(2, rounds)} 人時，恐無法分出勝負。
+    const minRounds = Math.ceil(Math.log2(allPlayers));
+
+    if (rounds > (allPlayers % 2 === 1 ? allPlayers : allPlayers - 1)) {
+      message.warning(`瑞士制輪數設定過多，將造成最後無法抓對。
+參賽 ${allPlayers} 人建議可採 ${allPlayers % 2 === 1 ? allPlayers : allPlayers - 1} 輪以下的瑞士制`);
+      return;
+    }
+
+    if (Math.pow(2, rounds) < allPlayers) {
+      message.warning(`${rounds} 輪瑞士制在參賽人數超過 ${Math.pow(2, rounds)} 人時，恐無法分出勝負。
 參賽 ${allPlayers} 人建議至少打 ${minRounds} 輪以上的瑞士制`);
-      }
     }
     
     // 設置強制初始化標記，確保創建全新玩家資料
