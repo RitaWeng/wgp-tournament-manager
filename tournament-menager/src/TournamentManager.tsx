@@ -929,12 +929,13 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
       setMatchesByRound(updatedMatchesByRound);
     }
     
-    // 繼續正常的抓對流程
-    generateSwissPairings();
+    // 繼續正常的抓對流程；失敗（人數不足 / 無解）時不要鎖按鈕，讓使用者調整後重試
+    const ok = generateSwissPairings();
+    if (!ok) return;
 
     // 更新選中的輪次為當前輪次
     setSelectedRound(currentRound);
-    
+
     // 設置抓對按鈕為禁用狀態，直到完成算分
     setIsPairingButtonDisabled(true);
   };
@@ -943,17 +944,17 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
 
   // 瑞士制抓對：薄包裝層，把純演算法（src/lib/swissPairing.js）回傳的對局
   // 包成 React state 需要的格式（補上 round / player1IsBlack），並把無解情境
-  // 轉成 alert。算分中段也直接呼叫 calculateAuxiliaryScoresCore，請見下方算分區段。
-  const generateSwissPairings = () => {
+  // 轉成 alert。回傳 true 代表已產生桌次表，false 代表中止（呼叫端應據此決定是否鎖按鈕）。
+  const generateSwissPairings = (): boolean => {
     if (players.length < 2) {
       message.warning('選手人數不足，無法抓對');
-      return;
+      return false;
     }
 
     const result = generateSwissPairingsCore(players, currentRound, { allowSameCountry });
     if (!result.ok) {
       alert(`${result.reason}\n${result.hint}\n\n建議：檢查選手資料、考慮減少輪數，或調整「允許同國對戰」設定。`);
-      return;
+      return false;
     }
 
     const playerByNumber = new Map(players.map(p => [p.number, p]));
@@ -992,6 +993,7 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     });
 
     setMatches(newMatches);
+    return true;
   };
   // 決定誰先手 (黑方)
   const determineFirstMove = (player1, player2, round) => {
