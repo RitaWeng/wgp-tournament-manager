@@ -5,6 +5,12 @@ import * as XLSX from 'xlsx';
 
 import packageInfo from '../package.json';
 
+// 抓對 / 輔分演算法（與 tests/regression/replay_excel.js 共用同一份程式碼）
+import {
+  calculateAuxiliaryScores as calculateAuxiliaryScoresCore,
+  generateSwissPairings as generateSwissPairingsCore,
+} from './lib/swissPairing';
+
 // 下載CSV函數
 const downloadCSV = (content, fileName) => {
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
@@ -935,282 +941,42 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
   
 
 
-  // 瑞士制抓對主函數（分組回溯法，對應 VBA Sub VS 邏輯）
-  // 計算輪動平衡（對應 VBA CountTurn）
-  // 輪高（對手分較高）：+1；輪低（對手分較低）：-1；同分：0
-  // 對應 VBA 以儲存格顏色記錄：16754599（黃=輪高）+1，16764108（綠=輪低）-1
-  const computeFloatBalance = (playersList) => {
-    const floatBalances = new Map<number, number>(playersList.map(p => [p.number as number, 0]));
-    if (playersList.length === 0) return floatBalances;
-
-    const roundCount = playersList[0].rounds.length;
-    for (let r = 0; r < roundCount; r++) {
-      // 確認本輪所有選手皆有結果，否則停止
-      if (!playersList.every(p => p.rounds[r] && p.rounds[r].score !== null)) break;
-
-      // 計算第 r 輪（0-indexed）前各選手的分數（rounds 0..r-1 之和）
-      const scoresBeforeRound = new Map<number, number>(
-        playersList.map(p => [
-          p.number as number,
-          p.rounds.slice(0, r).reduce((sum: number, rd) => sum + ((rd.score as number) ?? 0), 0)
-        ])
-      );
-
-      const processed = new Set();
-      playersList.forEach(p => {
-        const rd = p.rounds[r];
-        if (!rd || rd.score === null || !rd.opponent || rd.opponent === 0) return;
-        const pairKey = Math.min(p.number, rd.opponent) + '-' + Math.max(p.number, rd.opponent);
-        if (processed.has(pairKey)) return;
-        processed.add(pairKey);
-
-        const pScore = scoresBeforeRound.get(p.number) ?? 0;
-        const oppScore = scoresBeforeRound.get(rd.opponent) ?? 0;
-        if (pScore > oppScore) {
-          floatBalances.set(p.number, (floatBalances.get(p.number) ?? 0) - 1);
-          floatBalances.set(rd.opponent, (floatBalances.get(rd.opponent) ?? 0) + 1);
-        } else if (pScore < oppScore) {
-          floatBalances.set(p.number, (floatBalances.get(p.number) ?? 0) + 1);
-          floatBalances.set(rd.opponent, (floatBalances.get(rd.opponent) ?? 0) - 1);
-        }
-        // 同分：不更新輪動平衡
-      });
-    }
-    return floatBalances;
-  };
-
+  // 瑞士制抓對：薄包裝層，把純演算法（src/lib/swissPairing.js）回傳的對局
+  // 包成 React state 需要的格式（補上 round / player1IsBlack），並把無解情境
+  // 轉成 alert。算分中段也直接呼叫 calculateAuxiliaryScoresCore，請見下方算分區段。
   const generateSwissPairings = () => {
-    const playerCount = players.length;
-    if (playerCount < 2) {
+    if (players.length < 2) {
       message.warning('選手人數不足，無法抓對');
       return;
     }
 
-    // 計算輪動平衡（VBA VS() 明確排序鍵之一）
-    const floatBalances = computeFloatBalance(players);
-
-    // VBA VS() 排序的實效鍵（穩定排序複合效果）：
-    // 1. 總分降冪（VS() 明確鍵）
-    // 2. 輪動平衡升冪（VS() 明確鍵；被輪高多者排後，下輪較可能輪低）
-    // 3. 輔分一/二/三降冪（繼承 SortRank() 的行順序，透過穩定排序傳遞）
-    // 4. 籤號升冪（最終穩定排序）
-    const sortedPlayers = [...players].sort((a, b) => {
-      if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
-      const fa = floatBalances.get(a.number) ?? 0;
-      const fb = floatBalances.get(b.number) ?? 0;
-      if (fa !== fb) return fa - fb;
-      if (b.auxScore1 !== a.auxScore1) return b.auxScore1 - a.auxScore1;
-      if (b.auxScore2 !== a.auxScore2) return b.auxScore2 - a.auxScore2;
-      if (b.auxScore3 !== a.auxScore3) return b.auxScore3 - a.auxScore3;
-      return a.number - b.number;
-    });
-
-    const isOdd = playerCount % 2 === 1;
-    // 補成偶數；index >= playerCount 的位置為輪空虛擬槽
-    const vsPlayerCount = playerCount + (isOdd ? 1 : 0);
-
-    // groupNum[i]：選手 i 所屬組別（從 1 開始）
-    const groupNum = new Array(vsPlayerCount).fill(1);
-    // groupOrder[i]：組內配對序號（0 = 尚未配對）
-    const groupOrder = new Array(vsPlayerCount).fill(0);
-
-    const getNum     = (idx) => idx < playerCount ? sortedPlayers[idx].number : 0;
-    const getScore   = (idx) => idx < playerCount ? sortedPlayers[idx].totalScore : -Infinity;
-    const getCountry = (idx) => idx < playerCount ? (sortedPlayers[idx].country || '') : '';
-
-    // 判斷某選手是否曾被輪空過（rounds 中有 opponent === 0 的紀錄）
-    const hasReceivedBye = (idx) => {
-      if (idx >= playerCount) return false;
-      return sortedPlayers[idx].rounds.some(r => r.opponent === 0);
-    };
-
-    const hasPlayedBefore = (idx1, idx2) => {
-      // 虛擬輪空槽 vs 真實選手：若該選手已輪空過，視為「已配過」以避免重複輪空
-      if (idx1 >= playerCount && idx2 < playerCount) return hasReceivedBye(idx2);
-      if (idx2 >= playerCount && idx1 < playerCount) return hasReceivedBye(idx1);
-      if (idx1 >= playerCount || idx2 >= playerCount) return false;
-      const p2Num = getNum(idx2);
-      return sortedPlayers[idx1].rounds.some(r => r.opponent === p2Num);
-    };
-
-    const conflictsCountry = (idx1, idx2) => {
-      if (allowSameCountry) return false;
-      const c1 = getCountry(idx1), c2 = getCountry(idx2);
-      return c1 !== '' && c2 !== '' && c1 === c2;
-    };
-
-    // 分組：相同總分的選手依序兩兩分到同一組（確保每組人數為偶數）
-    groupNum[0] = 1;
-    if (vsPlayerCount > 1) groupNum[1] = 1;
-    for (let i = 2; i < vsPlayerCount; i += 2) {
-      const g = getScore(i) === getScore(i - 2) ? groupNum[i - 2] : groupNum[i - 2] + 1;
-      groupNum[i] = g;
-      if (i + 1 < vsPlayerCount) groupNum[i + 1] = g;
+    const result = generateSwissPairingsCore(players, currentRound, { allowSameCountry });
+    if (!result.ok) {
+      alert(`${result.reason}\n${result.hint}\n\n建議：檢查選手資料、考慮減少輪數，或調整「允許同國對戰」設定。`);
+      return;
     }
 
-    // vsRecord[g]：本組已完成的配對記錄（供回溯使用）
-    const vsRecord = Array.from({ length: Math.max(...groupNum) + 2 }, () => []);
-
-    let nowGroup = 1;
-
-    groupLoop: while (true) {
-      // ===== GroupOK：重設當前組的配對狀態 =====
-      let groupPlayerCount = 0;
-      let totalWait = 0;
-      for (let i = 0; i < vsPlayerCount; i++) {
-        if (groupNum[i] === nowGroup) {
-          groupOrder[i] = 0;
-          groupPlayerCount++;
-        }
-      }
-      for (let i = 0; i < vsPlayerCount; i++) {
-        if (groupOrder[i] === 0) totalWait++;
-      }
-      if (totalWait === 0) break; // 全部配對完成（VSOK）
-
-      if (groupPlayerCount === 0) {
-        // 此組無人，將後面各組號碼縮減
-        for (let i = 0; i < vsPlayerCount; i++) {
-          if (groupNum[i] > nowGroup) groupNum[i]--;
-        }
-        continue groupLoop;
-      }
-
-      let nowGroupWait = groupPlayerCount;
-      vsRecord[nowGroup] = [];
-      let nowGroupOrder = 1;
-      let needReCrawl = false;
-
-      // ===== VSNext：組內配對（含回溯） =====
-      vsNextLoop: while (true) {
-        // 尋找本組索引最大（分數最低）的未配對選手
-        let iIdx = -1;
-        for (let i = vsPlayerCount - 1; i >= 0; i--) {
-          if (groupNum[i] === nowGroup && groupOrder[i] === 0) { iIdx = i; break; }
-        }
-        if (iIdx === -1) {
-          // 本組全部配對完畢
-          nowGroup++;
-          while (vsRecord.length <= nowGroup) vsRecord.push([]);
-          continue groupLoop;
-        }
-
-        let searchI = iIdx;
-        let iiStart = iIdx - 1;
-
-        // 含回溯的搜尋迴圈
-        innerSearch: while (true) {
-          for (let iiIdx = iiStart; iiIdx >= 0; iiIdx--) {
-            if (groupNum[iiIdx] === nowGroup && groupOrder[iiIdx] === 0) {
-              if (!hasPlayedBefore(searchI, iiIdx) && !conflictsCountry(searchI, iiIdx)) {
-                // 找到合法配對
-                groupOrder[searchI] = nowGroupOrder;
-                groupOrder[iiIdx]   = nowGroupOrder;
-                vsRecord[nowGroup].push({ i: searchI, ii: iiIdx });
-                nowGroupOrder++;
-                nowGroupWait -= 2;
-                if (nowGroupWait === 0) {
-                  nowGroup++;
-                  while (vsRecord.length <= nowGroup) vsRecord.push([]);
-                  continue groupLoop;
-                }
-                continue vsNextLoop;
-              }
-            }
-          }
-          // 找不到配對對象
-          if (vsRecord[nowGroup].length > 0) {
-            // 回溯：撤銷最後一組配對，改試其他組合
-            const lp = vsRecord[nowGroup].pop();
-            groupOrder[lp.i]  = 0;
-            groupOrder[lp.ii] = 0;
-            nowGroupOrder--;
-            nowGroupWait += 2;
-            searchI = lp.i;
-            iiStart = lp.ii - 1;
-            continue innerSearch;
-          } else {
-            // 連第一組都無法配對，需要向後組借人
-            needReCrawl = true;
-            break vsNextLoop;
-          }
-        }
-      }
-
-      // ===== ReCrawlBeforePlayer：向後借人擴大本組 =====
-      if (needReCrawl) {
-        reCrawlLoop: while (true) {
-          vsRecord[nowGroup] = [];
-          let added = 0;
-          for (let j = 0; j < vsPlayerCount; j++) {
-            if (groupNum[j] > nowGroup) {
-              groupNum[j] = nowGroup;
-              added++;
-              if (added === 2) continue groupLoop; // 借到 2 人，回到 GroupOK 重試
-            }
-          }
-          // 借不到 2 人，往前一組退
-          if (nowGroup > 1) {
-            nowGroup--;
-            continue reCrawlLoop;
-          } else {
-            const allByed = sortedPlayers.every(p => p.rounds.some(r => r.opponent === 0));
-            const hint = isOdd && allByed
-              ? '所有選手都已輪空過，無法再安排輪空。'
-              : '可能因為剩餘可配對選手都已對戰過，或同國衝突無解。';
-            alert(`無法完成第 ${currentRound} 輪配對。\n${hint}\n\n建議：檢查選手資料、考慮減少輪數，或調整「允許同國對戰」設定。`);
-            return;
-          }
-        }
-      }
-    }
-
-    // ===== 建立桌次表 =====
-    const pairMap = new Map();
-    for (let i = 0; i < vsPlayerCount; i++) {
-      if (groupOrder[i] === 0) continue;
-      const key = `${groupNum[i]}-${groupOrder[i]}`;
-      if (!pairMap.has(key)) pairMap.set(key, []);
-      pairMap.get(key).push(i);
-    }
-
-    const newMatches = [];
-    let tableNum = 1;
-
-    const sortedKeys = Array.from(pairMap.keys()).sort((a, b) => {
-      const [ag, ao] = a.split('-').map(Number);
-      const [bg, bo] = b.split('-').map(Number);
-      // 組號升冪（分數高的組排前面），組內序號降冪（排名最高的對局排前面拿到低桌號）
-      return ag !== bg ? ag - bg : bo - ao;
-    });
-
-    for (const key of sortedKeys) {
-      const idxs = pairMap.get(key);
-      if (idxs.length !== 2) continue;
-      const idx1 = Math.min(idxs[0], idxs[1]); // 分數較高（索引較小）
-      const idx2 = Math.max(idxs[0], idxs[1]); // 分數較低（索引較大）
-
-      if (idx2 >= playerCount) {
-        // 輪空
-        newMatches.push({
-          table: tableNum++,
-          player1: getNum(idx1),
+    const playerByNumber = new Map(players.map(p => [p.number, p]));
+    const newMatches = result.matches.map(m => {
+      if (m.player2 === 0) {
+        return {
+          table: m.table,
+          player1: m.player1,
           player2: 0,
           round: currentRound,
-          player1IsBlack: true
-        });
-      } else {
-        const p1 = sortedPlayers[idx1];
-        const p2 = sortedPlayers[idx2];
-        newMatches.push({
-          table: tableNum++,
-          player1: p1.number,
-          player2: p2.number,
-          round: currentRound,
-          player1IsBlack: determineFirstMove(p1, p2, currentRound)
-        });
+          player1IsBlack: true,
+        };
       }
-    }
+      const p1 = playerByNumber.get(m.player1);
+      const p2 = playerByNumber.get(m.player2);
+      return {
+        table: m.table,
+        player1: m.player1,
+        player2: m.player2,
+        round: currentRound,
+        player1IsBlack: determineFirstMove(p1, p2, currentRound),
+      };
+    });
 
     // 更新 matchesByRound，保留之前輪次的比賽記錄
     setMatchesByRound(prev => {
@@ -1245,98 +1011,9 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     }
   };
 
-  // 計算各種輔分
-  const calculateAuxiliaryScores = (playersList) => {
-    const updatedPlayers = [...playersList];
-    
-    // 初始化輔分
-    updatedPlayers.forEach(player => {
-      player.auxScore1 = 0;
-      player.auxScore2 = 0;
-      player.auxScore3 = 0;
-    });
-    
-    // 輔分一：所遇對手之總分和
-    updatedPlayers.forEach(player => {
-      player.rounds.forEach(round => {
-        if (round.opponent && round.opponent !== 0) {
-          const opponent = updatedPlayers.find(p => p.number === round.opponent);
-          if (opponent) {
-            player.auxScore1 += opponent.totalScore;
-          }
-        }
-      });
-    });
-    
-    // 輔分二：所負對手之總分和
-    updatedPlayers.forEach(player => {
-      player.rounds.forEach(round => {
-        if (round.opponent && round.opponent !== 0 && round.score < (winPoint / 2)) {
-          const opponent = updatedPlayers.find(p => p.number === round.opponent);
-          if (opponent) {
-            player.auxScore2 += opponent.totalScore;
-          }
-        }
-      });
-    });
-    
-    // 修改後的輔分三計算：在總分、輔分一、輔分二相同的情況下，計算直接對戰結果
-    // 先根據總分、輔分一、輔分二分組
-    const playerGroups = [];
-    const processed = new Set();
-    
-    for (let i = 0; i < updatedPlayers.length; i++) {
-      const player = updatedPlayers[i];
-      if (processed.has(player.number)) continue;
-      
-      const group = [player];
-      processed.add(player.number);
-      
-      // 找出所有總分、輔分一、輔分二相同的選手
-      for (let j = 0; j < updatedPlayers.length; j++) {
-        const otherPlayer = updatedPlayers[j];
-        if (player.number === otherPlayer.number) continue;
-        if (processed.has(otherPlayer.number)) continue;
-        
-        if (player.totalScore === otherPlayer.totalScore && 
-            player.auxScore1 === otherPlayer.auxScore1 && 
-            player.auxScore2 === otherPlayer.auxScore2) {
-          group.push(otherPlayer);
-          processed.add(otherPlayer.number);
-        }
-      }
-      
-      if (group.length > 1) {
-        playerGroups.push(group);
-      }
-    }
-    
-    // 對每個分組計算選手之間的直接對戰結果
-    playerGroups.forEach(group => {
-      for (let i = 0; i < group.length; i++) {
-        const player = group[i];
-        let directMatchupScore = 0;
-        
-        for (let j = 0; j < group.length; j++) {
-          if (i === j) continue;
-          const opponent = group[j];
-          
-          // 查找直接對戰結果
-          const matchup = player.rounds.find(round => round.opponent === opponent.number);
-          if (matchup && matchup.score !== null && matchup.score !== undefined) {
-            directMatchupScore += matchup.score - (winPoint / 2);
-          }
-        }
-        
-        // 更新輔分三
-        const playerIndex = updatedPlayers.findIndex(p => p.number === player.number);
-        updatedPlayers[playerIndex].auxScore3 = directMatchupScore;
-      }
-    });
-
-
-    return updatedPlayers;
-  };
+  // 輔分計算包裝層：注入當前 winPoint 給共用模組
+  const calculateAuxiliaryScores = (playersList) =>
+    calculateAuxiliaryScoresCore(playersList, winPoint);
 
   // 計算得分
   const calculateScores = () => {

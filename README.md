@@ -156,7 +156,7 @@ npm run test:regression
 
 **Fixture 為去識別化版本**：`tests/fixtures/` 下的 Excel 已將學校名稱替換為 `學校NN`（保留 A/B/C 隊伍後綴），其餘數值欄位完全保留。`.gitignore` 對該目錄設了例外放行，clone 後即可直接跑測試。新增其他歷史比賽 fixture 的去識別化規則與步驟見 [`tests/README.md`](tests/README.md)。
 
-⚠ **限制**：`tests/regression/replay_excel.js` 是 `TournamentManager.tsx` 抓對演算法的手動 port，改 TSX 時必須同步改測試腳本，否則會「假性通過」。將來建議把演算法抽到獨立模組讓兩邊共用。
+**演算法共用同一份程式碼**：`tournament-menager/src/lib/swissPairing.js` 同時被 React 元件與此測試腳本 import，動了演算法就一定會被測試覆蓋到，不會發生「測試還在跑舊邏輯」的情形。
 
 ---
 

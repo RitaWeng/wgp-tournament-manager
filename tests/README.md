@@ -74,15 +74,18 @@ node tests/regression/replay_excel.js
    ```
 3. 跑 `npm run test:regression`，確認新 fixture 也是 `全部相符`
 
-## ⚠ 重要限制：演算法是「複製」而非「共用」
+## 演算法共用同一份程式碼
 
-`replay_excel.js` 內的 `computeFloatBalance` / `calculateAuxiliaryScores` / `generateSwissPairings` 是 `tournament-menager/src/TournamentManager.tsx` 對應函式的**手動 port**。
+`replay_excel.js` 與 `TournamentManager.tsx` 都 `import` 自同一個模組
+[`tournament-menager/src/lib/swissPairing.js`](../tournament-menager/src/lib/swissPairing.js)
+（含 `computeFloatBalance`、`calculateAuxiliaryScores`、`generateSwissPairings`）。
 
-意思是：
-- ✅ 修了 bug 並更新此測試 → 會抓到回歸
-- ❌ 改了 TSX 但忘了更新此測試 → 測試會「假性通過」
+意思是：**動了那支模組就一定會被測試覆蓋到，不會出現「TSX 改了但測試還在跑舊邏輯」的情況。**
 
-**改動配對 / 算分相關的 TSX 程式碼時，務必同步更新 `replay_excel.js`。** 將來若要根除這個風險，建議把演算法抽到獨立模組（例如 `tournament-menager/src/lib/swissPairing.ts`），讓 React 元件與測試 import 同一份。
+如果要改動演算法，建議流程：
+1. 修改 `swissPairing.js`
+2. 跑 `npm run test:regression` 確認既有比賽結果還是 100% 吻合
+3. 必要時也更新 fixture（補上能展現新行為差異的對照組）
 
 ## 後續可加入的測試類型（建議）
 
