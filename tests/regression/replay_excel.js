@@ -22,6 +22,7 @@ const {
 const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures');
 const FIXTURES = [
   { file: 'read_2025南北區競賽結果.xlsx', label: '2025 南北區' },
+  { file: 'WGP_選手成績_2026-04-18_萬中.xlsx', label: '2026萬中微型競賽' },
 ];
 const WIN_POINT = 1;
 
