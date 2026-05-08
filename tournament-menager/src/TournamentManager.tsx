@@ -901,6 +901,19 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
       return;
     }
 
+    // R1 抓對時提前提示輪數設定是否合理（不擋流程；真的無解時下方
+    // generateSwissPairings 會回報失敗）
+    if (currentRound === 1) {
+      const oddRoundCap = allPlayers % 2 === 1 ? allPlayers : allPlayers - 1;
+      if (rounds > oddRoundCap) {
+        message.warning(`瑞士制輪數設定過多，將造成最後無法抓對。\n參賽 ${allPlayers} 人建議可採 ${oddRoundCap} 輪以下的瑞士制`);
+      }
+      const minRounds = Math.ceil(Math.log2(allPlayers));
+      if (Math.pow(2, rounds) < allPlayers) {
+        message.warning(`${rounds} 輪瑞士制在參賽人數超過 ${Math.pow(2, rounds)} 人時，恐無法分出勝負。\n參賽 ${allPlayers} 人建議至少打 ${minRounds} 輪以上的瑞士制`);
+      }
+    }
+
     // 檢查當前輪次是否已經有桌次表存在
     const existingRounds = Object.keys(matchesByRound).map(r => parseInt(r, 10));
     if (existingRounds.includes(currentRound)) {
@@ -1844,20 +1857,6 @@ const handleFileUpload = (event) => {
   const resetSystem = () => {
     if (!window.confirm('確定要重設系統嗎？\n所有輪次的桌次、比賽結果及選手資料將全部清除，此操作無法復原。')) return;
 
-    // 檢查瑞士制輪數設定
-    const minRounds = Math.ceil(Math.log2(allPlayers));
-
-    if (rounds > (allPlayers % 2 === 1 ? allPlayers : allPlayers - 1)) {
-      message.warning(`瑞士制輪數設定過多，將造成最後無法抓對。
-參賽 ${allPlayers} 人建議可採 ${allPlayers % 2 === 1 ? allPlayers : allPlayers - 1} 輪以下的瑞士制`);
-      return;
-    }
-
-    if (Math.pow(2, rounds) < allPlayers) {
-      message.warning(`${rounds} 輪瑞士制在參賽人數超過 ${Math.pow(2, rounds)} 人時，恐無法分出勝負。
-參賽 ${allPlayers} 人建議至少打 ${minRounds} 輪以上的瑞士制`);
-    }
-    
     // 設置強制初始化標記，確保創建全新玩家資料
     setForceNewPlayers(true);
     
