@@ -429,6 +429,8 @@ const TournamentManager = () => {
   // 狀態管理
   const [allPlayers, setAllPlayers] = useState(10);
   const [rounds, setRounds] = useState(5);
+  // 輪數輸入框的草稿值：編輯期間先存字串、不立刻寫入 rounds，避免多位數輸入被自身 controlled value 中途夾斷
+  const [roundsDraft, setRoundsDraft] = useState<string | null>(null);
   const [winPoint, setWinPoint] = useState(1);
   const [players, setPlayers] = useState([]);
   // const [matches, setMatches] = useState([]);
@@ -2842,8 +2844,14 @@ const handleFileUpload = (event) => {
               <div className="px-4 py-3 space-y-3">
                 {/* 設定列：手機 2 欄、桌面 12 欄 */}
                 {/* 比賽一旦開始（任一輪已生成桌次或已算分），這 3 個欄位鎖為唯讀，避免追溯改寫已紀錄的勝負與分數 */}
+                {/* 例外：輪數允許「只降不升」— 上限為當前值，下限為已涵蓋資料（避免抹掉已抓對 / 已計分的輪次） */}
                 {(() => {
                   const lockedTitle = '比賽已開始，無法修改。如需更動，請先點「重設」清除資料。';
+                  // 下限只看實際有資料的輪次（已抓對 / 已計分），不把 UI 導覽中的 currentRound 算進來
+                  const roundsFloor = Math.max(1, ...existingRounds, ...scoredRounds);
+                  const roundsLockedTitle = roundsFloor >= rounds
+                    ? `比賽已開始，輪數無法上調；目前已涵蓋至第 ${roundsFloor} 輪，亦無法再下調。`
+                    : `比賽已開始，輪數只能由 ${rounds} 下調至最少 ${roundsFloor}（保留所有已抓對 / 已計分輪次）；不可上調。`;
                   return (
                 <div className="grid grid-cols-2 sm:grid-cols-12 gap-3">
                   <Field label="賽制" col={2}><Static>瑞士制</Static></Field>
@@ -2855,7 +2863,33 @@ const handleFileUpload = (event) => {
                   </Field>
                   <Field label="輪數" col={2}>
                     {tournamentStarted
-                      ? <Static title={lockedTitle}>{rounds}</Static>
+                      ? <input
+                          type="number"
+                          min={roundsFloor}
+                          max={rounds}
+                          value={roundsDraft ?? String(rounds)}
+                          disabled={roundsFloor >= rounds}
+                          title={roundsLockedTitle}
+                          onChange={e => setRoundsDraft(e.target.value)}
+                          onBlur={() => {
+                            const raw = roundsDraft;
+                            setRoundsDraft(null);
+                            if (raw === null) return;
+                            const v = parseInt(raw, 10);
+                            if (!Number.isFinite(v)) return;
+                            // 上限固定用編輯前的 rounds（編輯期間不會被 onChange 改寫），下限為實際資料覆蓋的輪次
+                            const next = Math.min(rounds, Math.max(roundsFloor, v));
+                            if (next !== rounds) {
+                              setRounds(next);
+                              // 下修總輪數時，把導覽中的 currentRound 也夾回新上限，避免停留在已不存在的輪次
+                              setCurrentRound(prev => Math.min(prev, next));
+                            }
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                          }}
+                          className="w-full px-2 h-9 text-base font-mono-num disabled:opacity-60 disabled:cursor-not-allowed"
+                        />
                       : <input type="number" min={1} value={rounds} onChange={e => setRounds(parseInt(e.target.value) || 1)} className="w-full px-2 h-9 text-base font-mono-num"/>}
                   </Field>
                   <Field label="勝方得分" col={1}>
