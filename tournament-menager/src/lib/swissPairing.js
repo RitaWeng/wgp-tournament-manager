@@ -352,7 +352,7 @@ function generateSwissPairings(players, currentRound, options) {
           const hint =
             isOdd && allByed
               ? '所有選手都已輪空過，無法再安排輪空。'
-              : '可能因為剩餘可配對選手都已對戰過，或同國衝突無解。';
+              : '可能因為剩餘可配對選手都已對戰過。';
           return {
             ok: false,
             reason: `無法完成第 ${currentRound} 輪配對。`,

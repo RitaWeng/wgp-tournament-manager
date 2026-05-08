@@ -438,7 +438,10 @@ const TournamentManager = () => {
   // 以 {1: [round1 matches], 2: […], …} 格式儲存
   const [matchesByRound, setMatchesByRound] = useState({});
   const [sortByRank, setSortByRank] = useState(false);
-  const [allowSameCountry, setAllowSameCountry] = useState(false);
+  // 預設 true（不擋同國）：UI 上沒有暴露此設定，預設 false 會讓 Excel 帶 country
+  // 欄的使用者出現「不能改也不知為何被擋」的隱性限制；要重新啟用同國檢查時，
+  // 接 UI 開關即可。
+  const [allowSameCountry, setAllowSameCountry] = useState(true);
   const [currentRound, setCurrentRound] = useState(1);
   const [gameTitle, setGameTitle] = useState('WGP GiveMe5');
   const [editMode, setEditMode] = useState(false);
@@ -968,7 +971,7 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
 
     const result = generateSwissPairingsCore(players, currentRound, { allowSameCountry });
     if (!result.ok) {
-      alert(`${result.reason}\n${result.hint}\n\n建議：檢查選手資料、考慮減少輪數，或調整「允許同國對戰」設定。`);
+      alert(`${result.reason}\n${result.hint}\n\n建議：檢查選手資料，或考慮減少輪數。`);
       return false;
     }
 
@@ -1864,7 +1867,7 @@ const handleFileUpload = (event) => {
     initializePlayers(true); // 傳入 true 強制創建新的玩家數據
     setCurrentRound(1);
     setSortByRank(false);
-    setAllowSameCountry(false);
+    setAllowSameCountry(true);
     // 重設 matchesByRound
     setMatchesByRound({});
     // 重設當前顯示的桌次
