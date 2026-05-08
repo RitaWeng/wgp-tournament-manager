@@ -49,6 +49,21 @@
 - 右側桌次下拉選單可切換查看任意輪次，已完成輪次標示 ✓
 - **流程引導提示列**：依目前狀態自動顯示下一步操作提示
 - 「輔分說明」彈窗隨時查閱輔分定義
+- **多主題**：light / dark / paper / navy 即時切換，選擇寫入 localStorage
+- **手機 RWD**：雙欄改堆疊、設定列改 2 欄、桌次配對改上下排版，支援 iOS Safari `100dvh` 視窗
+- **投影模式**：名次表與當前輪次桌次表獨立投影視窗（桌次以暖琥珀／冷藍區分奇偶桌、桌號直式顯示），投影按鈕在手機隱藏
+
+### 設定的修改限制
+比賽一旦開始（任一輪已抓對或已算分），系統依「不抹掉已紀錄資料」原則鎖定設定欄位：
+
+| 欄位 | 開賽後 |
+|------|--------|
+| 參賽隊伍 | 唯讀（鎖定） |
+| 勝方得分 | 唯讀（鎖定） |
+| 輪數 | **可下調、不可上調**；下限 = max(目前輪次, 已抓對輪次, 已計分輪次)，避免「3 隊 4 輪」之類設定卡死無出口 |
+| 已算分輪次的結果 | 唯讀；要修改點該輪的「🔓 解除鎖定」 |
+
+完整復原回初始狀態請按「重設」 — 會清空所有桌次、計分與選手資料（無法復原）。
 
 ---
 
@@ -56,17 +71,26 @@
 
 ```
 wgp-tournament-manager/
-└── tournament-menager/          # 主應用程式
-    ├── src/
-    │   ├── TournamentManager.tsx  # 核心元件（配對、算分、UI）
-    │   └── index.tsx              # 應用進入點
-    ├── public/
-    │   ├── index.html
-    │   └── icon.ico
-    ├── webpack.config.js
-    ├── tailwind.config.js
-    ├── tsconfig.json
-    └── package.json
+├── tournament-menager/             # 主應用程式
+│   ├── src/
+│   │   ├── TournamentManager.tsx   # 核心元件（UI、流程、Excel I/O、計分）
+│   │   ├── lib/
+│   │   │   └── swissPairing.js     # 抓對演算法純函式（React 元件與回歸測試共用）
+│   │   ├── index.css               # Tailwind 入口 + CSS 變數主題
+│   │   └── index.tsx               # 應用進入點
+│   ├── public/
+│   │   ├── index.html
+│   │   └── icon.ico
+│   ├── webpack.config.js
+│   ├── tailwind.config.js
+│   ├── tsconfig.json
+│   └── package.json
+├── tests/                          # 回歸測試
+│   ├── regression/replay_excel.js  # 把歷年 Excel 比賽結果餵回演算法逐輪比對
+│   ├── fixtures/                   # 去識別化的歷年比賽 Excel
+│   └── README.md                   # 新增 fixture 的去識別化規則
+└── docs/                           # 設計備忘
+    └── swiss-pairing-aux-equivalence.md
 ```
 
 ---
@@ -264,7 +288,9 @@ npm run test:regression
 
 ### 五、回溯與借人機制（Backtracking & ReCrawl）
 
-組內搜尋時，若最低排名選手找不到合法對手（已交手過 / 同國衝突），系統自動**回溯**（撤銷前一組配對，改試其他組合）。若整組皆回溯失敗，則進入 **ReCrawl**：從下一組借入前 2 人擴大本組，重新嘗試。若仍失敗則逐組往前退，直到找到可行解。
+組內搜尋時，若最低排名選手找不到合法對手（已交手過；若啟用同國檢查則含同國衝突），系統自動**回溯**（撤銷前一組配對，改試其他組合）。若整組皆回溯失敗，則進入 **ReCrawl**：從下一組借入前 2 人擴大本組，重新嘗試。若仍失敗則逐組往前退，直到找到可行解。
+
+> 同國檢查（`allowSameCountry`）目前預設 **不啟用**（即不擋同國配對）。state、setter、`conflictsCountry()`、Excel `country` 欄讀取都保留在程式碼中，未來要做出 UI 開關時可直接接上。
 
 ---
 
@@ -272,6 +298,7 @@ npm run test:regression
 
 | 日期 | 版本 / Commit | 內容 |
 |------|--------------|------|
+| 2026-05-08 | `42a6644` / `233ec04` / `ab03b0a` / `a489ed4` 邊界情境修補 | **輪數可降不可升**：開賽後（已抓對或已算分）輪數欄位由唯讀改為「只能下調」，下限為 max(currentRound, 已抓對輪次, 已計分輪次)，避免「3 隊 4 輪」之類設定卡死無出口（`42a6644`）。**重設不再被輪數警告擋住**：`resetSystem()` 內原本檢查 `rounds > allPlayers - 1` 等不合理設定時 early return，導致需要重設才能解開的不合理狀態反而無法重設；檢查搬到 `generatePairings()` R1 觸發、改為非阻擋 toast，重設改為單純 clear（`ab03b0a`）。**同國配對預設改為不擋**：`allowSameCountry` UI 上沒有開關，預設 false 會讓 Excel 帶 country 欄的使用者遭隱性禁配；改為預設 true，骨架（state、setter、conflictsCountry、Excel country 讀取）保留以便日後接 UI；錯誤訊息中關於「同國衝突」的死建議一併移除（`a489ed4`）。**演算法註解強化**：在 `swissPairing.js` 排序鍵上補註「輔分一/二/三在 JS 中扮演 VBA `Sub VS` stable-sort 的等效角色」，避免後人誤改 — 詳見 [`docs/swiss-pairing-aux-equivalence.md`](docs/swiss-pairing-aux-equivalence.md)（`233ec04`） |
 | 2026-04-27 | `v1.2.0` 主題化、行動版、設定鎖定 | **主題系統**：引入 CSS 變數主題架構，新增 4 套主題（light / dark / paper / navy）即時切換，選擇寫入 localStorage；元件統一改用 `.btn-*` / `--text-*` / `--bg-*` token（`15c7f08`、`0fa6278`）。**手機 RWD**：雙欄改堆疊、設定列改 2 欄、桌次配對改上下排版、字體基準 14px、`min-h-[100dvh]` 避 iOS 網址列、投影按鈕在手機隱藏（`c52b24a`）。**設定鎖定**：比賽開始後（已抓對或已算分）自動鎖定參賽隊伍／輪數／勝分為唯讀，避免追溯改寫已紀錄分數（`c52b24a`）。**投影模式精修**：桌次投影對齊名次表風格（色帶 gradient + 同色邊線），桌號直式排列、奇偶桌暖琥珀/冷藍區分（`4970c0b`、`15c7f08`）。**視覺微調**：底色加深（#EBEEF2）；歡迎使用橫幅新增 X 關閉按鈕（`2c88bd4`、`428c7a3`）。**基建**：tsconfig 改用 `moduleResolution: bundler` + target es2017 消除 TS 5.8 deprecation；整併 `.gitignore` 至根目錄（`2dffd71`） |
 | 2026-02-21 | `515978b` update version | 更新程式版本號 |
 | 2026-02-21 | `3154a14` 移除 Electron | 移除 Electron 桌面封裝（`electron.js` 及相關設定），專案改為純線上發布（GitHub Pages） |
