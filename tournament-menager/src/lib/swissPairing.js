@@ -180,6 +180,11 @@ function calculateAuxiliaryScores(playersList, winPoint) {
  *   3. 輔分一 / 二 / 三 降冪
  *   4. 籤號 升冪（最終穩定排序）
  *
+ * 註：VBA 原版 `Sub VS` 字面只用 (總分, 輪動, [stable])，但其 stable 來自上一輪
+ * post-pair 排序留下的 row 歷史，本質上等價於以「過去對手強度」為 tiebreaker。
+ * 輔分一/二/三在 JS 中扮演同樣角色 — 雖非 VBA 字面實作，但回歸測試（2025 南北區
+ * 去識別化 fixture）顯示此版本與 VBA 實際輸出一致；移除輔分會讓 R3 起的配對發散。
+ *
  * 分組策略：步長 2 比較相鄰位置，分數相同視為同組。奇數組會把下一組第一人
  * 納入（boundary leakage）以保持每組偶數，符合瑞士制借人規則。
  *
