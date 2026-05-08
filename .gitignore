@@ -25,6 +25,9 @@ yarn-error.log*
 excel_data.json
 vba_output.txt
 
+# 本機 bug 重現/開發用資料（fixture + REPRO.md）
+test-data/
+
 # 例外：tests/fixtures/ 下的 Excel 已做去識別化處理，可上版控
 !tests/fixtures/*.xlsx
 # 但仍排除備份檔（*.bak 等）
