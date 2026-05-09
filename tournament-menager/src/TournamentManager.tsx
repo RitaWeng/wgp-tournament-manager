@@ -1577,7 +1577,7 @@ const handleFileUpload = (event) => {
       const meaningfulHeaders = headerKeys.filter(k => k && !k.startsWith('__EMPTY'));
       console.log("偵測到的標頭:", headerKeys, "有效標頭:", meaningfulHeaders);
 
-      const formatHint = '請確保 Excel 第一列為欄位標頭（不要先放標題列或空白列），且需包含「籤號」與「隊伍」兩個欄位，從第二列開始輸入資料。可接受的標頭名稱：籤號／編號／No、隊伍／隊名／團隊／名稱、國家／城市（選填）、段位／級別（選填）。';
+      const formatHint = '請確保 Excel 第一列為欄位標頭（不要先放標題列或空白列），且需包含「籤號」與「隊伍」兩個欄位，從第二列開始輸入資料。可接受的標頭名稱：籤號／編號／No、隊伍／隊名／團隊／名稱。';
 
       // 案例 1：整張表只有一欄（例如把籤號和隊伍寫在同一格）
       if (headerKeys.length < 2) {
@@ -1711,7 +1711,7 @@ const handleFileUpload = (event) => {
       
     } catch (error) {
       console.error('檔案處理錯誤:', error);
-      message.error(`處理檔案時發生錯誤: ${error.message}。請確認檔案格式是否正確或檢查控制台獲取更多資訊。`);
+      message.error(`處理檔案時發生錯誤: ${error.message}請確認檔案格式是否正確。`);
     }
   };
   
