@@ -11,6 +11,9 @@ import {
   generateSwissPairings as generateSwissPairingsCore,
 } from './lib/swissPairing';
 
+// in-page 對話框（取代原生 alert / confirm / prompt）
+import { dialog } from './lib/dialog';
+
 // 下載CSV函數
 const downloadCSV = (content, fileName) => {
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
@@ -413,16 +416,11 @@ const SplitPane = ({ leftPane, rightPane, splitRatio = 50 }) => {
 };
 
 // 簡單的消息通知功能
+// 各方法皆 fire-and-forget；呼叫端不需 await，原本 20+ 個呼叫點不必更動。
 const message = {
-  success: (content) => {
-    alert(content);
-  },
-  warning: (content) => {
-    alert(content);
-  },
-  error: (content) => {
-    alert(content);
-  }
+  success: (content: React.ReactNode) => { void dialog.alert({ tone: 'success', message: content }); },
+  warning: (content: React.ReactNode) => { void dialog.alert({ tone: 'warn',    message: content }); },
+  error:   (content: React.ReactNode) => { void dialog.alert({ tone: 'error',   message: content }); },
 };
 
 const TournamentManager = () => {
@@ -870,34 +868,38 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
   };
 
   // 取代直接呼叫 drawLots 的 onClick
-  const handleDrawLots = () => {
+  const handleDrawLots = async () => {
     if (currentRound !== 1) {
         message.warning('只有第 1 輪可以抽籤');
         return;
     }
-    
+
     // 檢查是否有任何輪次的桌次表存在
     const existingRounds = Object.keys(matchesByRound).map(r => parseInt(r, 10));
     const hasAnyRounds = existingRounds.length > 0;
-    
+
+    const ok = await dialog.confirm({
+      title: '抽籤確認',
+      message: hasAnyRounds
+        ? `已存在桌次表！\n抽籤將會清除所有輪次的桌次和比賽結果。\n\n確定要在第 ${currentRound} 輪執行抽籤嗎？`
+        : `確定要在第 ${currentRound} 輪執行抽籤嗎？`,
+      tone: hasAnyRounds ? 'warn' : 'info',
+      danger: hasAnyRounds,
+      okText: '執行抽籤',
+    });
+    if (!ok) return;
+
+    // 如果確認，清除所有輪次的桌次表
     if (hasAnyRounds) {
-      const maxRound = Math.max(...existingRounds);
-      message.warning(`已存在桌次表！抽籤將會清除所有輪次的桌次表和比賽結果。`);
+      setMatchesByRound({});
     }
-    
-    if (window.confirm(`確定要在第 ${currentRound} 輪執行抽籤${hasAnyRounds ? '，並清除所有輪次的桌次和比賽結果' : ''}嗎？`)) {
-      // 如果確認，清除所有輪次的桌次表
-      if (hasAnyRounds) {
-        setMatchesByRound({});
-      }
-      
-      // 執行抽籤
-      drawLots();
-    }
+
+    // 執行抽籤
+    drawLots();
   };
 
   // 生成配對
-  const generatePairings = () => {
+  const generatePairings = async () => {
     // 如果按鈕已被禁用，則不執行任何操作
     if (isPairingButtonDisabled) {
       message.warning('已生成本輪桌次表，請完成本輪比賽結果輸入並按下「算分」後再生成下一輪桌次表。');
@@ -930,13 +932,18 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     // 如果當前輪次不是最高輪次，顯示警告
     if (hasNextRounds) {
       const maxRound = Math.max(...existingRounds);
-      message.warning(`已存在第 ${currentRound + 1} 輪或更高輪次的桌次表！抓對將會清除第 ${currentRound + 1} 到第 ${maxRound} 輪的所有桌次和比賽結果。`);
-      
-      // 詢問確認
-      if (!window.confirm(`確定要在第 ${currentRound} 輪執行抓對並清除後續輪次的資料嗎？`)) {
-        return;
-      }
-      
+      const ok = await dialog.confirm({
+        title: '清除後續輪次',
+        message:
+          `已存在第 ${currentRound + 1} 輪或更高輪次的桌次表。\n` +
+          `抓對將會清除第 ${currentRound + 1} 到第 ${maxRound} 輪的所有桌次和比賽結果。\n\n` +
+          `確定要在第 ${currentRound} 輪執行抓對嗎？`,
+        tone: 'warn',
+        danger: true,
+        okText: '執行抓對',
+      });
+      if (!ok) return;
+
       // 如果確認，清除高於當前輪次的桌次表
       const updatedMatchesByRound = { ...matchesByRound };
       existingRounds.forEach(round => {
@@ -948,7 +955,7 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     }
     
     // 繼續正常的抓對流程；失敗（人數不足 / 無解）時不要鎖按鈕，讓使用者調整後重試
-    const ok = generateSwissPairings();
+    const ok = await generateSwissPairings();
     if (!ok) return;
 
     // 更新選中的輪次為當前輪次
@@ -962,8 +969,8 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
 
   // 瑞士制抓對：薄包裝層，把純演算法（src/lib/swissPairing.js）回傳的對局
   // 包成 React state 需要的格式（補上 round / player1IsBlack），並把無解情境
-  // 轉成 alert。回傳 true 代表已產生桌次表，false 代表中止（呼叫端應據此決定是否鎖按鈕）。
-  const generateSwissPairings = (): boolean => {
+  // 轉成對話框訊息。回傳 true 代表已產生桌次表，false 代表中止（呼叫端應據此決定是否鎖按鈕）。
+  const generateSwissPairings = async (): Promise<boolean> => {
     if (players.length < 2) {
       message.warning('選手人數不足，無法抓對');
       return false;
@@ -971,7 +978,11 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
 
     const result = generateSwissPairingsCore(players, currentRound, { allowSameCountry });
     if (!result.ok) {
-      alert(`${result.reason}\n${result.hint}\n\n建議：檢查選手資料，或考慮減少輪數。`);
+      await dialog.alert({
+        tone: 'error',
+        title: '抓對失敗',
+        message: `${result.reason}\n${result.hint}\n\n建議：檢查選手資料，或考慮減少輪數。`,
+      });
       return false;
     }
 
@@ -1036,7 +1047,7 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     calculateAuxiliaryScoresCore(playersList, winPoint);
 
   // 計算得分
-  const calculateScores = () => {
+  const calculateScores = async () => {
     // 算分前先驗證配對：hardErrors 必擋；softErrors 彈 confirm 可覆寫
     const { hardErrors, softErrors } = getPairingIssues(currentRound);
     if (hardErrors.length > 0) {
@@ -1044,9 +1055,12 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
       return;
     }
     if (softErrors.length > 0) {
-      const ok = window.confirm(
-        `偵測到下列重複對戰：\n\n${softErrors.join('\n')}\n\n仍要算分嗎？`
-      );
+      const ok = await dialog.confirm({
+        title: '偵測到重複對戰',
+        message: `${softErrors.join('\n')}\n\n仍要算分嗎？`,
+        tone: 'warn',
+        okText: '仍要算分',
+      });
       if (!ok) {
         setPairingValidation({ round: currentRound, errors: softErrors });
         return;
@@ -1857,8 +1871,15 @@ const handleFileUpload = (event) => {
   };
 
   // 重設系統
-  const resetSystem = () => {
-    if (!window.confirm('確定要重設系統嗎？\n所有輪次的桌次、比賽結果及選手資料將全部清除，此操作無法復原。')) return;
+  const resetSystem = async () => {
+    const ok = await dialog.confirm({
+      title: '重設系統',
+      message: '確定要重設系統嗎？\n所有輪次的桌次、比賽結果及選手資料將全部清除，此操作無法復原。',
+      tone: 'error',
+      danger: true,
+      okText: '確定重設',
+    });
+    if (!ok) return;
 
     // 設置強制初始化標記，確保創建全新玩家資料
     setForceNewPlayers(true);
@@ -1884,8 +1905,14 @@ const handleFileUpload = (event) => {
   };
 
   // 解除輪次鎖定，允許重新登錄結果並算分
-  const unlockRound = (round: number) => {
-    if (!window.confirm(`確定要解除第 ${round} 輪的鎖定嗎？\n解除後可重新修改結果，再按「算分」重新計算。`)) return;
+  const unlockRound = async (round: number) => {
+    const ok = await dialog.confirm({
+      title: '解除輪次鎖定',
+      message: `確定要解除第 ${round} 輪的鎖定嗎？\n解除後可重新修改結果，再按「算分」重新計算。`,
+      tone: 'warn',
+      okText: '解除鎖定',
+    });
+    if (!ok) return;
     setScoredRounds(prev => prev.filter(r => r !== round));
     setCurrentRound(round);
     setSelectedRound(round);
