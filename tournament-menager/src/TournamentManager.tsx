@@ -557,7 +557,8 @@ const TournamentManager = () => {
       setAllPlayers(appState.allPlayers);
       setRounds(appState.rounds);
       setWinPoint(appState.winPoint);
-      setPlayers(appState.players);
+      // 向後相容：舊存檔的選手沒有 status/withdrawnRound，補上預設（缺欄位才補，既有值保留）
+      setPlayers((appState.players || []).map(p => ({ status: 'active', withdrawnRound: null, ...p })));
       setMatches(appState.matches);
       setMatchesByRound(appState.matchesByRound);
       setSortByRank(appState.sortByRank);
@@ -654,7 +655,8 @@ const TournamentManager = () => {
         setAllPlayers(appState.allPlayers);
         setRounds(appState.rounds);
         setWinPoint(appState.winPoint);
-        setPlayers(appState.players);
+        // 向後相容：舊存檔的選手沒有 status/withdrawnRound，補上預設（缺欄位才補，既有值保留）
+      setPlayers((appState.players || []).map(p => ({ status: 'active', withdrawnRound: null, ...p })));
         setMatches(appState.matches);
         setMatchesByRound(appState.matchesByRound);
         setSortByRank(appState.sortByRank);
@@ -723,6 +725,42 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     updatedPlayers[playerIndex].country = newCountry;
     setPlayers(updatedPlayers);
   }
+};
+
+// 切換棄賽 / 恢復參賽。棄賽採「從下一個尚未配對的輪次起生效」：
+// 已打成績保留並照算進對手輔分，但退賽隊不再被抓對、不佔正式名次。
+const handleToggleWithdraw = async (playerNumber) => {
+  const player = players.find(p => p.number === playerNumber);
+  if (!player) return;
+
+  if (player.status === 'withdrawn') {
+    const ok = await dialog.confirm({
+      title: '恢復參賽',
+      message: `確定讓「${player.name}」恢復參賽？\n將重新納入正式名次與後續抓對。`,
+      tone: 'info',
+      okText: '恢復參賽',
+    });
+    if (!ok) return;
+    setPlayers(players.map(p =>
+      p.number === playerNumber ? { ...p, status: 'active', withdrawnRound: null } : p
+    ));
+    return;
+  }
+
+  // 當輪若已產生桌次，退賽從下一輪起生效（當輪維持原桌次）；否則從當輪起生效
+  const currentRoundPaired = !!(matchesByRound[currentRound] && matchesByRound[currentRound].length);
+  const effectiveRound = currentRoundPaired ? currentRound + 1 : currentRound;
+  const ok = await dialog.confirm({
+    title: '標記棄賽',
+    message: `確定將「${player.name}」標記為棄賽？\n將從第 ${effectiveRound} 輪起不再被抓對；已打成績保留並計入對手輔分，但不佔正式名次。`,
+    tone: 'warn',
+    danger: true,
+    okText: '標記棄賽',
+  });
+  if (!ok) return;
+  setPlayers(players.map(p =>
+    p.number === playerNumber ? { ...p, status: 'withdrawn', withdrawnRound: effectiveRound } : p
+  ));
 };
 
   // 初始化玩家數據
@@ -835,6 +873,8 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
           name: `隊伍${i}`,
           level: '',
           country: '',
+          status: 'active',        // 'active' | 'withdrawn'：是否仍在賽
+          withdrawnRound: null,    // 從第幾輪起棄賽（1-based）；null 表示未棄賽
           totalScore: 0,
           rank: i,
           auxScore1: 0, // 輔分一：所遇對手之總分和
@@ -971,12 +1011,14 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
   // 包成 React state 需要的格式（補上 round / player1IsBlack），並把無解情境
   // 轉成對話框訊息。回傳 true 代表已產生桌次表，false 代表中止（呼叫端應據此決定是否鎖按鈕）。
   const generateSwissPairings = async (): Promise<boolean> => {
-    if (players.length < 2) {
-      message.warning('選手人數不足，無法抓對');
+    // 棄賽隊不進入配對池；只有仍在賽（active）的隊伍參與抓對
+    const activePlayers = players.filter(p => p.status !== 'withdrawn');
+    if (activePlayers.length < 2) {
+      message.warning('在賽隊伍人數不足，無法抓對');
       return false;
     }
 
-    const result = generateSwissPairingsCore(players, currentRound, { allowSameCountry });
+    const result = generateSwissPairingsCore(activePlayers, currentRound, { allowSameCountry });
     if (!result.ok) {
       await dialog.alert({
         tone: 'error',
@@ -1121,8 +1163,11 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
     // 計算輔分
     const playersWithAuxScores = calculateAuxiliaryScores(updatedPlayers);
     
-    // 更新排名
-    const rankedPlayers = [...playersWithAuxScores].sort((a, b) => {
+    // 更新排名：退賽隊不佔正式名次（rank=null），只對仍在賽（active）的隊伍排名
+    playersWithAuxScores.forEach(p => { if (p.status === 'withdrawn') p.rank = null; });
+    const rankedPlayers = playersWithAuxScores
+      .filter(p => p.status !== 'withdrawn')
+      .sort((a, b) => {
       // 先按總分排序
       if (b.totalScore !== a.totalScore) {
         return b.totalScore - a.totalScore;
@@ -1666,6 +1711,8 @@ const handleFileUpload = (event) => {
               name: `隊伍${i}`,
               level: '',
               country: '',
+              status: 'active',
+              withdrawnRound: null,
               totalScore: 0,
               rank: i,
               auxScore1: 0,
@@ -1828,8 +1875,20 @@ const handleFileUpload = (event) => {
   // 根據名次或籤號排序
   const getSortedPlayers = () => {
     return [...players].sort((a, b) => {
+      // 退賽隊一律沉到最後一區
+      const aw = a.status === 'withdrawn' ? 1 : 0;
+      const bw = b.status === 'withdrawn' ? 1 : 0;
+      if (aw !== bw) return aw - bw;
       if (sortByRank) {
-        return a.rank - b.rank;
+        // 退賽隊無正式名次（rank=null），彼此間依凍結分數（總分→輔分→籤號）排序
+        if (aw === 1) {
+          if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+          if (b.auxScore1 !== a.auxScore1) return b.auxScore1 - a.auxScore1;
+          if (b.auxScore2 !== a.auxScore2) return b.auxScore2 - a.auxScore2;
+          if (b.auxScore3 !== a.auxScore3) return b.auxScore3 - a.auxScore3;
+          return a.number - b.number;
+        }
+        return (a.rank ?? 9999) - (b.rank ?? 9999);
       }
       return a.number - b.number;
     });
@@ -2150,6 +2209,20 @@ const handleFileUpload = (event) => {
     </div>
   );
 
+  // 棄賽 / 恢復參賽按鈕（僅編輯模式顯示）
+  const WithdrawButton = ({ player }: { player: any }) => (
+    <button
+      onClick={() => handleToggleWithdraw(player.number)}
+      title={player.status === 'withdrawn' ? '恢復參賽' : '標記棄賽'}
+      className={`px-2 h-7 rounded-md text-[11px] border transition-colors whitespace-nowrap flex-shrink-0
+        ${player.status === 'withdrawn'
+          ? 'border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--bg-hover)]'
+          : 'border-[var(--border-default)] text-[var(--text-muted)] hover:text-[var(--loss)] hover:border-[var(--loss)]'}`}
+    >
+      {player.status === 'withdrawn' ? '恢復' : '棄賽'}
+    </button>
+  );
+
   // 緊湊視圖：前三名突顯卡片 + 其他列表
   const renderCompactStandings = (sortedPlayers: any[]) => {
     const hasRanking = sortedPlayers.length > 0 && sortedPlayers[0].rank;
@@ -2175,6 +2248,7 @@ const handleFileUpload = (event) => {
                         : <div className="font-bold text-lg truncate">{p.name}</div>
                       }
                       <Pill tone="muted" size="sm">#{p.number}</Pill>
+                      {editMode && <WithdrawButton player={p}/>}
                     </div>
                     <RecordBar player={p}/>
                   </div>
@@ -2197,14 +2271,16 @@ const handleFileUpload = (event) => {
               <div className="text-xs uppercase tracking-wider text-[var(--text-muted)] px-2 pt-2 font-semibold">其他</div>
             )}
             {rest.map(p => (
-              <div key={p.number} className="flex items-center gap-3 px-2 py-2.5 rounded-md hover:bg-[var(--bg-hover)] transition-colors">
-                <span className="font-mono-num text-sm font-semibold text-[var(--text-secondary)] w-7 text-center tabular">{p.rank || '—'}</span>
+              <div key={p.number} className={`flex items-center gap-3 px-2 py-2.5 rounded-md hover:bg-[var(--bg-hover)] transition-colors ${p.status === 'withdrawn' ? 'opacity-55' : ''}`}>
+                <span className="font-mono-num text-sm font-semibold text-[var(--text-secondary)] w-7 text-center tabular">{p.status === 'withdrawn' ? '—' : (p.rank || '—')}</span>
                 <span className="font-mono-num text-xs text-[var(--text-disabled)] w-7 tabular">#{p.number}</span>
                 <div className="flex-1 min-w-0 flex items-center gap-2">
                   {editMode
                     ? <input type="text" value={p.name} onChange={e => handlePlayerNameChange(p.number, e.target.value)} className="px-2 h-8 text-base flex-1"/>
-                    : <div className="text-base font-medium truncate">{p.name}</div>
+                    : <div className={`text-base font-medium truncate ${p.status === 'withdrawn' ? 'line-through' : ''}`}>{p.name}</div>
                   }
+                  {p.status === 'withdrawn' && <Pill tone="muted" size="sm">棄賽</Pill>}
+                  {editMode && <WithdrawButton player={p}/>}
                 </div>
                 <RecordBar player={p}/>
                 <div className="text-right flex-shrink-0 w-16">
@@ -2239,14 +2315,18 @@ const handleFileUpload = (event) => {
         </thead>
         <tbody>
           {sortedPlayers.map(p => (
-            <tr key={p.number}>
-              <td className="px-3 py-2.5"><RankMedal rank={p.rank}/></td>
+            <tr key={p.number} className={p.status === 'withdrawn' ? 'opacity-55' : ''}>
+              <td className="px-3 py-2.5"><RankMedal rank={p.status === 'withdrawn' ? undefined : p.rank}/></td>
               <td className="px-2 py-2.5 font-mono-num text-sm text-[var(--text-muted)]">#{p.number}</td>
               <td className="px-2 py-2.5 max-w-40">
-                {editMode
-                  ? <input type="text" value={p.name} onChange={e => handlePlayerNameChange(p.number, e.target.value)} className="px-2 h-8 text-base w-full"/>
-                  : <span className="font-semibold text-base block truncate" title={p.name}>{p.name}</span>
-                }
+                <div className="flex items-center gap-2 min-w-0">
+                  {editMode
+                    ? <input type="text" value={p.name} onChange={e => handlePlayerNameChange(p.number, e.target.value)} className="px-2 h-8 text-base w-full"/>
+                    : <span className={`font-semibold text-base block truncate ${p.status === 'withdrawn' ? 'line-through' : ''}`} title={p.name}>{p.name}</span>
+                  }
+                  {p.status === 'withdrawn' && <Pill tone="muted" size="sm">棄賽</Pill>}
+                  {editMode && <WithdrawButton player={p}/>}
+                </div>
               </td>
               <td className="px-2 py-2.5 text-center font-mono-num font-bold text-lg tabular col-total">{p.totalScore}</td>
               <td className="px-2 py-2.5 text-center font-mono-num text-[var(--text-secondary)] tabular col-aux">{p.auxScore1}</td>

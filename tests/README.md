@@ -60,7 +60,17 @@ node tests/regression/replay_excel.js
 | ... | ... 重複 N 輪 |
 | 後 4 欄 | `總分`, `名次`, `輔一`, `輔二`, `輔三`（讀取時不會用到，僅作 sanity check） |
 
-範例見 `fixtures/read_2025南北區競賽結果.xlsx`（北區 29 隊 × 5 輪、南區 22 隊 × 4 輪）。
+**對手欄的特殊值**：
+
+- `0`＝該輪輪空（BYE），照常納入比對。
+- 空白（`null`）＝該隊**該輪未出賽（中途棄賽）**。重放引擎會自動偵測：找出每隊最後一個有對手的輪次，
+  若之後還有未打的輪次，視為從下一輪起棄賽。棄賽隊**不再進入後續輪次的配對池**（鏡像 App 的 wrapper 過濾），
+  但其已打成績仍計入過往對手的輔分一/二（瑞士制標準）。
+
+範例見：
+- `fixtures/read_2025南北區競賽結果.xlsx`（北區 29 隊 × 5 輪、南區 22 隊 × 4 輪）
+- `fixtures/2026北區.xlsx`（2026 GM5 北區，26 隊 × 5 輪）
+- `fixtures/2026南區.xlsx`（2026 GM5 南區，23 隊 × 4 輪；**含 4 隊 R1 後棄賽**，為棄賽情境的回歸樣本）
 
 ### 加入新的 fixture
 
@@ -69,6 +79,8 @@ node tests/regression/replay_excel.js
    ```js
    const FIXTURES = [
      { file: 'read_2025南北區競賽結果.xlsx', label: '2025 南北區' },
+     { file: '2026北區.xlsx',                 label: '2026北區 GM5' },
+     { file: '2026南區.xlsx',                 label: '2026南區 GM5' },
      { file: 'your-new-fixture.xlsx',         label: '簡短描述' },
    ];
    ```

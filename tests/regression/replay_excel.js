@@ -23,6 +23,8 @@ const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures');
 const FIXTURES = [
   { file: 'read_2025南北區競賽結果.xlsx', label: '2025 南北區' },
   { file: 'WGP_選手成績_2026-04-18_萬中.xlsx', label: '2026萬中微型競賽' },
+  { file: '2026北區.xlsx', label: '2026北區 GM5' },
+  { file: '2026南區.xlsx', label: '2026南區 GM5' },
 ];
 const WIN_POINT = 1;
 
@@ -47,11 +49,20 @@ function parseSheet(ws) {
         isBlack: false,
       });
     }
+    // 偵測中途棄賽：找最後一個「有對手記錄」的輪次（輪空 opponent=0 仍算有出賽；
+    // 棄賽後未出賽的輪次 opponent=null/空白）。若之後仍有未打的輪次，視為從下一輪起棄賽。
+    let lastPlayed = 0;
+    for (let k = 0; k < roundCount; k++) {
+      if (rounds[k].opponent !== null) lastPlayed = k + 1;
+    }
+    const withdrawnRound = lastPlayed >= 1 && lastPlayed < roundCount ? lastPlayed + 1 : null;
+
     players.push({
       number,
       name,
       country: '',
       rounds,
+      withdrawnRound,
       totalScore: 0,
       auxScore1: 0,
       auxScore2: 0,
@@ -94,7 +105,11 @@ function replay(label, allPlayers, totalRounds) {
     const withTotals = recomputeTotals(view, target - 1);
     const withAux = calculateAuxiliaryScores(withTotals, WIN_POINT);
 
-    const result = generateSwissPairings(withAux, target);
+    // 棄賽隊不再進入配對池（鏡像 App wrapper：呼叫核心前過濾 active 名單）。
+    // 注意輔分仍以全體計算（withAux），讓退賽隊已打成績照算進對手輔分一/二。
+    const active = withAux.filter((p) => p.withdrawnRound == null || p.withdrawnRound > target);
+
+    const result = generateSwissPairings(active, target);
     if (!result.ok) {
       allMatch = false;
       console.log(`R${target}: ✗ 演算法回報無解 — ${result.reason} ${result.hint}`);
@@ -108,7 +123,8 @@ function replay(label, allPlayers, totalRounds) {
     allPlayers.forEach((p) => {
       const rd = p.rounds[target - 1];
       if (!rd) return;
-      const opp = rd.opponent ?? 0;
+      if (rd.opponent === null) return; // 該輪未出賽（已棄賽），不納入比對；真正輪空 opponent=0 仍照算
+      const opp = rd.opponent;
       const k = asPairKey(p.number, opp);
       if (seen.has(k)) return;
       seen.add(k);
