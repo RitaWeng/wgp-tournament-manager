@@ -216,9 +216,11 @@ function calculateAuxiliaryScores(playersList, winPoint) {
  * 配對策略：組內由分數最低（索引最大）的選手往前找配對；若整組無解則
  * 從下一組借兩人（ReCrawl）；仍無解則往前一組退；都失敗則回 PairingResultErr。
  *
- * @param {Player[]} players
+ * @param {Player[]} players          進入配對池的選手（棄賽隊已由呼叫端過濾）
  * @param {number} currentRound       當前要產生的輪次（1-based，僅用於錯誤訊息）
- * @param {{ allowSameCountry?: boolean }} [options]
+ * @param {{ allowSameCountry?: boolean, allPlayers?: Player[] }} [options]
+ *        allPlayers：含棄賽隊的完整名單，供輪動平衡查歷史對手分數用
+ *        （退賽隊已打成績照算，否則其對手的升降級記錄會被當成對 0 分隊）；未給則以 players 計算
  * @returns {PairingResult}
  */
 function generateSwissPairings(players, currentRound, options) {
@@ -230,7 +232,7 @@ function generateSwissPairings(players, currentRound, options) {
     return { ok: false, reason: '選手人數不足，無法抓對', hint: '至少需要 2 名選手' };
   }
 
-  const floatBalances = computeFloatBalance(players);
+  const floatBalances = computeFloatBalance((options && options.allPlayers) || players);
 
   const sortedPlayers = [...players].sort((a, b) => {
     if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;

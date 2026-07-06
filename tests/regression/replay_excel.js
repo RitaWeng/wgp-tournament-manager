@@ -110,7 +110,8 @@ function replay(label, allPlayers, totalRounds) {
     // 注意輔分仍以全體計算（withAux），讓退賽隊已打成績照算進對手輔分一/二。
     const active = withAux.filter((p) => isActiveForRound(p, target));
 
-    const result = generateSwissPairings(active, target);
+    // allPlayers 傳完整名單（鏡像 App wrapper）：輪動平衡需查退賽對手的歷史分數
+    const result = generateSwissPairings(active, target, { allPlayers: withAux });
     if (!result.ok) {
       allMatch = false;
       console.log(`R${target}: ✗ 演算法回報無解 — ${result.reason} ${result.hint}`);

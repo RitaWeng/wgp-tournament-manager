@@ -426,6 +426,27 @@ const message = {
   error:   (content: React.ReactNode) => { void dialog.alert({ tone: 'error',   message: content }); },
 };
 
+// 棄賽 / 恢復參賽按鈕（僅編輯模式顯示）。定義在模組層級：
+// 若定義在元件 render body 內，每次 render 都是新的元件型別，React 會整批 unmount/remount
+const WithdrawButton = ({ player, onToggle }: { player: any; onToggle: (n: number) => void }) => (
+  <button
+    onClick={() => onToggle(player.number)}
+    title={isWithdrawn(player) ? '恢復參賽' : '標記棄賽'}
+    className={`px-2 h-7 rounded-md text-[11px] border transition-colors whitespace-nowrap flex-shrink-0
+      ${isWithdrawn(player)
+        ? 'border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--bg-hover)]'
+        : 'border-[var(--border-default)] text-[var(--text-muted)] hover:text-[var(--loss)] hover:border-[var(--loss)]'}`}
+  >
+    {isWithdrawn(player) ? '恢復' : '棄賽'}
+  </button>
+);
+
+// 載入存檔（localStorage 還原 / JSON 匯入）時的選手正規化：
+// 舊存檔缺 withdrawnRound 補預設值（缺欄位才補，既有值保留），並剝除已廢棄的 status 欄位
+// （棄賽狀態以 withdrawnRound 為唯一事實來源）
+const normalizePlayers = (list) =>
+  (list || []).map(({ status, ...p }) => ({ withdrawnRound: null, ...p }));
+
 const TournamentManager = () => {
   // 狀態管理
   const [allPlayers, setAllPlayers] = useState(10);
@@ -560,9 +581,7 @@ const TournamentManager = () => {
       setAllPlayers(appState.allPlayers);
       setRounds(appState.rounds);
       setWinPoint(appState.winPoint);
-      // 向後相容：舊存檔的選手沒有 withdrawnRound，補上預設（缺欄位才補，既有值保留）；
-      // 一併剝除已廢棄的 status 欄位（棄賽狀態以 withdrawnRound 為唯一事實來源）
-      setPlayers((appState.players || []).map(({ status, ...p }) => ({ withdrawnRound: null, ...p })));
+      setPlayers(normalizePlayers(appState.players));
       setMatches(appState.matches);
       setMatchesByRound(appState.matchesByRound);
       setSortByRank(appState.sortByRank);
@@ -659,9 +678,7 @@ const TournamentManager = () => {
         setAllPlayers(appState.allPlayers);
         setRounds(appState.rounds);
         setWinPoint(appState.winPoint);
-        // 向後相容：舊存檔的選手沒有 withdrawnRound，補上預設（缺欄位才補，既有值保留）；
-        // 一併剝除已廢棄的 status 欄位（棄賽狀態以 withdrawnRound 為唯一事實來源）
-        setPlayers((appState.players || []).map(({ status, ...p }) => ({ withdrawnRound: null, ...p })));
+        setPlayers(normalizePlayers(appState.players));
         setMatches(appState.matches);
         setMatchesByRound(appState.matchesByRound);
         setSortByRank(appState.sortByRank);
@@ -778,6 +795,22 @@ const handleToggleWithdraw = async (playerNumber) => {
   toggleAndRerank(effectiveRound);
 };
 
+  // 預設選手物件的唯一定義：所有初始化路徑（開賽初始化、名單上傳重建）共用，
+  // 新增選手欄位時只需改這裡（載入舊存檔的補欄位見 normalizePlayers）
+  const createDefaultPlayer = (i: number) => ({
+    number: i,
+    name: `隊伍${i}`,
+    level: '',
+    country: '',
+    withdrawnRound: null,    // 從第幾輪起棄賽（1-based）；null 表示未棄賽（唯一事實來源）
+    totalScore: 0,
+    rank: i,
+    auxScore1: 0, // 輔分一：所遇對手之總分和
+    auxScore2: 0, // 輔分二：所負對手之總分和
+    auxScore3: 0, // 輔分三：彼此對戰之勝負
+    rounds: Array(rounds).fill(null).map(() => ({ score: null, opponent: null, isBlack: false }))
+  });
+
   // 初始化玩家數據
   useEffect(() => {
     // 嘗試從 localStorage 加載狀態，如果沒有再初始化玩家
@@ -883,19 +916,7 @@ const handleToggleWithdraw = async (playerNumber) => {
       // 創建全新的玩家資料
       const newPlayers = [];
       for (let i = 1; i <= allPlayers; i++) {
-        newPlayers.push({
-          number: i,
-          name: `隊伍${i}`,
-          level: '',
-          country: '',
-          withdrawnRound: null,    // 從第幾輪起棄賽（1-based）；null 表示未棄賽（唯一事實來源）
-          totalScore: 0,
-          rank: i,
-          auxScore1: 0, // 輔分一：所遇對手之總分和
-          auxScore2: 0, // 輔分二：所負對手之總分和
-          auxScore3: 0, // 輔分三：彼此對戰之勝負
-          rounds: Array(rounds).fill(null).map(() => ({ score: null, opponent: null, isBlack: false }))
-        });
+        newPlayers.push(createDefaultPlayer(i));
       }
       setPlayers(newPlayers);
     }
@@ -1032,7 +1053,8 @@ const handleToggleWithdraw = async (playerNumber) => {
       return false;
     }
 
-    const result = generateSwissPairingsCore(activePlayers, currentRound, { allowSameCountry });
+    // allPlayers 傳完整名單：輪動平衡需查退賽對手的歷史分數（已打成績照算）
+    const result = generateSwissPairingsCore(activePlayers, currentRound, { allowSameCountry, allPlayers: players });
     if (!result.ok) {
       await dialog.alert({
         tone: 'error',
@@ -1283,11 +1305,14 @@ const handleToggleWithdraw = async (playerNumber) => {
       for (let i = 0; i < rounds; i++) {
         const round = player.rounds[i] || { score: null, opponent: null };
         row.push(round.score !== null ? round.score : '');
-        row.push(round.opponent ? round.opponent : '');
+        // 輪空（opponent=0）明確寫 0，空白保留給未出賽（棄賽後輪次）——
+        // 與回歸測試 fixture 的解析規則一致（0＝輪空、空白＝棄賽）
+        row.push(round.opponent != null ? round.opponent : '');
       }
-      
-      // 添加統計數據
-      row.push(player.totalScore, player.auxScore1, player.auxScore2, player.auxScore3, player.rank);
+
+      // 添加統計數據；棄賽隊不佔名次，名次欄標示「棄賽」
+      row.push(player.totalScore, player.auxScore1, player.auxScore2, player.auxScore3,
+        isWithdrawn(player) ? '棄賽' : player.rank);
       playerData.push(row);
     });
     
@@ -1727,19 +1752,7 @@ const handleFileUpload = (event) => {
           if (existing) {
             newPlayers.push({ ...existing });
           } else {
-            newPlayers.push({
-              number: i,
-              name: `隊伍${i}`,
-              level: '',
-              country: '',
-              withdrawnRound: null,
-              totalScore: 0,
-              rank: i,
-              auxScore1: 0,
-              auxScore2: 0,
-              auxScore3: 0,
-              rounds: Array(rounds).fill(null).map(() => ({ score: null, opponent: null, isBlack: false }))
-            });
+            newPlayers.push(createDefaultPlayer(i));
           }
         }
 
@@ -2223,20 +2236,6 @@ const handleFileUpload = (event) => {
     </div>
   );
 
-  // 棄賽 / 恢復參賽按鈕（僅編輯模式顯示）
-  const WithdrawButton = ({ player }: { player: any }) => (
-    <button
-      onClick={() => handleToggleWithdraw(player.number)}
-      title={isWithdrawn(player) ? '恢復參賽' : '標記棄賽'}
-      className={`px-2 h-7 rounded-md text-[11px] border transition-colors whitespace-nowrap flex-shrink-0
-        ${isWithdrawn(player)
-          ? 'border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--bg-hover)]'
-          : 'border-[var(--border-default)] text-[var(--text-muted)] hover:text-[var(--loss)] hover:border-[var(--loss)]'}`}
-    >
-      {isWithdrawn(player) ? '恢復' : '棄賽'}
-    </button>
-  );
-
   // 緊湊視圖：前三名突顯卡片 + 其他列表
   const renderCompactStandings = (sortedPlayers: any[]) => {
     const hasRanking = sortedPlayers.length > 0 && sortedPlayers[0].rank;
@@ -2265,7 +2264,7 @@ const handleFileUpload = (event) => {
                         : <div className="font-bold text-lg truncate">{p.name}</div>
                       }
                       <Pill tone="muted" size="sm">#{p.number}</Pill>
-                      {editMode && <WithdrawButton player={p}/>}
+                      {editMode && <WithdrawButton player={p} onToggle={handleToggleWithdraw}/>}
                     </div>
                     <RecordBar player={p}/>
                   </div>
@@ -2297,7 +2296,7 @@ const handleFileUpload = (event) => {
                     : <div className={`text-base font-medium truncate ${isWithdrawn(p) ? 'line-through' : ''}`}>{p.name}</div>
                   }
                   {isWithdrawn(p) && <Pill tone="muted" size="sm">棄賽</Pill>}
-                  {editMode && <WithdrawButton player={p}/>}
+                  {editMode && <WithdrawButton player={p} onToggle={handleToggleWithdraw}/>}
                 </div>
                 <RecordBar player={p}/>
                 <div className="text-right flex-shrink-0 w-16">
@@ -2342,7 +2341,7 @@ const handleFileUpload = (event) => {
                     : <span className={`font-semibold text-base block truncate ${isWithdrawn(p) ? 'line-through' : ''}`} title={p.name}>{p.name}</span>
                   }
                   {isWithdrawn(p) && <Pill tone="muted" size="sm">棄賽</Pill>}
-                  {editMode && <WithdrawButton player={p}/>}
+                  {editMode && <WithdrawButton player={p} onToggle={handleToggleWithdraw}/>}
                 </div>
               </td>
               <td className="px-2 py-2.5 text-center font-mono-num font-bold text-lg tabular col-total">{p.totalScore}</td>
