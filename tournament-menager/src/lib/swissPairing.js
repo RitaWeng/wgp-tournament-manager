@@ -58,6 +58,18 @@ function isActiveForRound(player, round) {
   return player.withdrawnRound == null || round < player.withdrawnRound;
 }
 
+/**
+ * 標準成績比較器：總分 → 輔分一 → 輔分二 → 輔分三 → 籤號（皆由大到小，籤號由小到大）。
+ * 名次排序與棄賽隊的凍結分數排序共用，避免比較鏈多份複製後漂移。
+ */
+function compareByScoreThenAux(a, b) {
+  if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+  if (b.auxScore1 !== a.auxScore1) return b.auxScore1 - a.auxScore1;
+  if (b.auxScore2 !== a.auxScore2) return b.auxScore2 - a.auxScore2;
+  if (b.auxScore3 !== a.auxScore3) return b.auxScore3 - a.auxScore3;
+  return a.number - b.number;
+}
+
 function computeFloatBalance(playersList) {
   const fb = new Map(playersList.map((p) => [p.number, 0]));
   if (playersList.length === 0) return fb;
@@ -418,4 +430,5 @@ module.exports = {
   generateSwissPairings,
   isWithdrawn,
   isActiveForRound,
+  compareByScoreThenAux,
 };

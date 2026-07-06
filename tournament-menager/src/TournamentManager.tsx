@@ -11,6 +11,7 @@ import {
   generateSwissPairings as generateSwissPairingsCore,
   isWithdrawn,
   isActiveForRound,
+  compareByScoreThenAux,
 } from './lib/swissPairing';
 
 // in-page 對話框（取代原生 alert / confirm / prompt）
@@ -1900,13 +1901,7 @@ const handleFileUpload = (event) => {
       if (aw !== bw) return aw - bw;
       if (sortByRank) {
         // 退賽隊無正式名次（rank=null），彼此間依凍結分數（總分→輔分→籤號）排序
-        if (aw === 1) {
-          if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
-          if (b.auxScore1 !== a.auxScore1) return b.auxScore1 - a.auxScore1;
-          if (b.auxScore2 !== a.auxScore2) return b.auxScore2 - a.auxScore2;
-          if (b.auxScore3 !== a.auxScore3) return b.auxScore3 - a.auxScore3;
-          return a.number - b.number;
-        }
+        if (aw === 1) return compareByScoreThenAux(a, b);
         return (a.rank ?? 9999) - (b.rank ?? 9999);
       }
       return a.number - b.number;
@@ -2245,8 +2240,11 @@ const handleFileUpload = (event) => {
   // 緊湊視圖：前三名突顯卡片 + 其他列表
   const renderCompactStandings = (sortedPlayers: any[]) => {
     const hasRanking = sortedPlayers.length > 0 && sortedPlayers[0].rank;
-    const top3 = hasRanking && sortByRank ? sortedPlayers.slice(0, 3) : [];
-    const rest = hasRanking && sortByRank ? sortedPlayers.slice(3) : sortedPlayers;
+    // 突顯卡只給在賽隊伍：getSortedPlayers 已把棄賽隊沉底，取前段在賽隊即可；
+    // 在賽隊不足 3 隊時卡片數跟著減少，棄賽隊一律進「其他」列表（該處才有棄賽樣式）
+    const activeCount = sortedPlayers.filter(p => !isWithdrawn(p)).length;
+    const top3 = hasRanking && sortByRank ? sortedPlayers.slice(0, Math.min(3, activeCount)) : [];
+    const rest = hasRanking && sortByRank ? sortedPlayers.slice(top3.length) : sortedPlayers;
 
     return (
       <div className="p-3 space-y-3">
@@ -2696,7 +2694,11 @@ const handleFileUpload = (event) => {
 
   // 名次表投影視圖：突顯冠亞季軍漸層卡片 + 獎盃
   const renderStandingsProjection = () => {
-    const sorted = [...players].sort((a, b) => (a.rank || 9999) - (b.rank || 9999));
+    // 在賽隊依名次排，棄賽隊沉底、彼此間依凍結分數排（與名次表頁的排序一致）
+    const sorted = [
+      ...players.filter(p => !isWithdrawn(p)).sort((a, b) => (a.rank || 9999) - (b.rank || 9999)),
+      ...players.filter(p => isWithdrawn(p)).sort(compareByScoreThenAux),
+    ];
     const limit = standingsTopN ?? sorted.length;
     const display = sorted.slice(0, limit);
     const labels = ['冠軍', '亞軍', '季軍', '殿軍'];
@@ -2717,8 +2719,9 @@ const handleFileUpload = (event) => {
 
         <div className="w-full max-w-4xl space-y-2">
           {display.map((p) => {
-            const isTop3 = (p.rank || 99) <= 3;
-            const cardClass =
+            const wd = isWithdrawn(p);
+            const isTop3 = !wd && (p.rank || 99) <= 3;
+            const cardClass = wd ? 'elevated opacity-55' :
               p.rank === 1 ? 'bg-gradient-to-r from-[oklch(0.78_0.14_85_/_0.20)] to-transparent border-[oklch(0.70_0.15_85_/_0.45)]' :
               p.rank === 2 ? 'bg-gradient-to-r from-[oklch(0.85_0.02_250_/_0.30)] to-transparent border-[oklch(0.70_0.02_250_/_0.40)]' :
               p.rank === 3 ? 'bg-gradient-to-r from-[oklch(0.72_0.13_45_/_0.15)] to-transparent border-[oklch(0.58_0.13_45_/_0.40)]' :
@@ -2732,8 +2735,10 @@ const handleFileUpload = (event) => {
                       className={`w-8 h-8 mb-1 ${p.rank === 1 ? 'text-[oklch(0.65_0.15_85)]' : p.rank === 2 ? 'text-[oklch(0.55_0.02_250)]' : 'text-[oklch(0.58_0.13_45)]'}`}
                     />
                   )}
-                  <div className={`font-mono-num font-bold tabular leading-none ${isTop3 ? 'text-3xl' : 'text-2xl text-[var(--text-secondary)]'}`}>{p.rank || '—'}</div>
-                  {p.rank && p.rank <= 4 && <div className="text-xs text-[var(--text-muted)] mt-1">{labels[p.rank - 1]}</div>}
+                  <div className={`font-mono-num font-bold tabular leading-none ${isTop3 ? 'text-3xl' : 'text-2xl text-[var(--text-secondary)]'}`}>{wd ? '—' : (p.rank || '—')}</div>
+                  {wd
+                    ? <div className="text-xs text-[var(--text-muted)] mt-1">棄賽</div>
+                    : p.rank && p.rank <= 4 && <div className="text-xs text-[var(--text-muted)] mt-1">{labels[p.rank - 1]}</div>}
                 </div>
                 <Pill tone="muted" size="md" className="w-16 justify-center tabular flex-shrink-0">#{p.number}</Pill>
                 <div className="flex-1 min-w-0">
@@ -2741,7 +2746,7 @@ const handleFileUpload = (event) => {
                     text={p.name}
                     maxFontPx={isTop3 ? 48 : 36}
                     minFontPx={isTop3 ? 28 : 22}
-                    className="font-bold"
+                    className={`font-bold ${wd ? 'line-through' : ''}`}
                   />
                 </div>
                 <div className="text-right">
