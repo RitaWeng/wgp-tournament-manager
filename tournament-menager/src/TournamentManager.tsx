@@ -733,9 +733,23 @@ const handlePlayerCountryChange = (playerNumber, newCountry) => {
 
 // 切換棄賽 / 恢復參賽。棄賽採「從下一個尚未配對的輪次起生效」：
 // 已打成績保留並照算進對手輔分，但退賽隊不再被抓對、不佔正式名次。
+// 切換後立即重排名次（在賽隊名次連號；恢復的隊馬上取回名次），不需等下一次算分。
+// 賽前（尚無任何成績）不重排，維持初始的籤號名次。
 const handleToggleWithdraw = async (playerNumber) => {
   const player = players.find(p => p.number === playerNumber);
   if (!player) return;
+
+  // 用 functional setState 避免 confirm 開窗期間落地的其他更新被舊 snapshot 覆蓋；
+  // recomputeRanks 會 mutate 元素，先淺拷貝每個 player 再交給它。
+  const toggleAndRerank = (newWithdrawnRound) => {
+    setPlayers(prev => {
+      const toggled = prev.map(p =>
+        p.number === playerNumber ? { ...p, withdrawnRound: newWithdrawnRound } : { ...p }
+      );
+      const anyScored = toggled.some(p => p.rounds.some(r => r && r.score !== null));
+      return anyScored ? recomputeRanks(toggled) : toggled;
+    });
+  };
 
   if (isWithdrawn(player)) {
     const ok = await dialog.confirm({
@@ -745,9 +759,7 @@ const handleToggleWithdraw = async (playerNumber) => {
       okText: '恢復參賽',
     });
     if (!ok) return;
-    setPlayers(players.map(p =>
-      p.number === playerNumber ? { ...p, withdrawnRound: null } : p
-    ));
+    toggleAndRerank(null);
     return;
   }
 
@@ -762,9 +774,7 @@ const handleToggleWithdraw = async (playerNumber) => {
     okText: '標記棄賽',
   });
   if (!ok) return;
-  setPlayers(players.map(p =>
-    p.number === playerNumber ? { ...p, withdrawnRound: effectiveRound } : p
-  ));
+  toggleAndRerank(effectiveRound);
 };
 
   // 初始化玩家數據
@@ -1091,6 +1101,76 @@ const handleToggleWithdraw = async (playerNumber) => {
   const calculateAuxiliaryScores = (playersList) =>
     calculateAuxiliaryScoresCore(playersList, winPoint);
 
+  // 重算輔分與名次（會 mutate 傳入陣列的元素並回傳同一陣列，呼叫端須傳入可變的拷貝）：
+  // 退賽隊 rank=null 不佔正式名次；在賽隊伍依總分→輔分一二三→籤號排序，支援並列名次 (1,1,3,4,4,6...)
+  const recomputeRanks = (playerList) => {
+    const playersWithAuxScores = calculateAuxiliaryScores(playerList);
+
+    playersWithAuxScores.forEach(p => { if (isWithdrawn(p)) p.rank = null; });
+    const rankedPlayers = playersWithAuxScores
+      .filter(p => !isWithdrawn(p))
+      .sort((a, b) => {
+      // 先按總分排序
+      if (b.totalScore !== a.totalScore) {
+        return b.totalScore - a.totalScore;
+      }
+
+      // 如果總分相同，按輔分一排序
+      if (b.auxScore1 !== a.auxScore1) {
+        return b.auxScore1 - a.auxScore1;
+      }
+
+      // 如果輔分一相同，按輔分二排序
+      if (b.auxScore2 !== a.auxScore2) {
+        return b.auxScore2 - a.auxScore2;
+      }
+
+      // 如果輔分二相同，按輔分三排序
+      if (b.auxScore3 !== a.auxScore3) {
+        return b.auxScore3 - a.auxScore3;
+      }
+
+      // 所有輔分相同，按籤號排序
+      return a.number - b.number;
+    });
+
+    // 分配名次 - 修改為支援並列名次 (1, 1, 3, 4, 4, 6...)
+    let currentRank = 1;
+    let skipCount = 0;
+
+    for (let i = 0; i < rankedPlayers.length; i++) {
+      // 找出此選手在原數組中的索引
+      const playerIndex = playersWithAuxScores.findIndex(p => p.number === rankedPlayers[i].number);
+
+      if (i > 0) {
+        // 檢查和前一位選手是否得分相同
+        const prevPlayer = rankedPlayers[i - 1];
+        const currentPlayer = rankedPlayers[i];
+
+        const isTied = currentPlayer.totalScore === prevPlayer.totalScore &&
+                      currentPlayer.auxScore1 === prevPlayer.auxScore1 &&
+                      currentPlayer.auxScore2 === prevPlayer.auxScore2 &&
+                      currentPlayer.auxScore3 === prevPlayer.auxScore3;
+
+        if (isTied) {
+          // 與前一位選手並列，使用相同名次
+          playersWithAuxScores[playerIndex].rank = currentRank;
+          skipCount++;
+        } else {
+          // 不是並列，名次需要跳過已經使用的數量
+          currentRank += skipCount + 1;
+          skipCount = 0;
+          playersWithAuxScores[playerIndex].rank = currentRank;
+        }
+      } else {
+        // 第一位選手，名次為1
+        playersWithAuxScores[playerIndex].rank = currentRank;
+      }
+    }
+
+    return playersWithAuxScores;
+  };
+
   // 計算得分
   const calculateScores = async () => {
     // 算分前先驗證配對：hardErrors 必擋；softErrors 彈 confirm 可覆寫
@@ -1163,71 +1243,8 @@ const handleToggleWithdraw = async (playerNumber) => {
       }, 0);
     });
     
-    // 計算輔分
-    const playersWithAuxScores = calculateAuxiliaryScores(updatedPlayers);
-    
-    // 更新排名：退賽隊不佔正式名次（rank=null），只對仍在賽（active）的隊伍排名
-    playersWithAuxScores.forEach(p => { if (isWithdrawn(p)) p.rank = null; });
-    const rankedPlayers = playersWithAuxScores
-      .filter(p => !isWithdrawn(p))
-      .sort((a, b) => {
-      // 先按總分排序
-      if (b.totalScore !== a.totalScore) {
-        return b.totalScore - a.totalScore;
-      }
-      
-      // 如果總分相同，按輔分一排序
-      if (b.auxScore1 !== a.auxScore1) {
-        return b.auxScore1 - a.auxScore1;
-      }
-      
-      // 如果輔分一相同，按輔分二排序
-      if (b.auxScore2 !== a.auxScore2) {
-        return b.auxScore2 - a.auxScore2;
-      }
-      
-      // 如果輔分二相同，按輔分三排序
-      if (b.auxScore3 !== a.auxScore3) {
-        return b.auxScore3 - a.auxScore3;
-      }
-      
-      // 所有輔分相同，按籤號排序
-      return a.number - b.number;
-    });
-    
-    // 分配名次 - 修改為支援並列名次 (1, 1, 3, 4, 4, 6...)
-    let currentRank = 1;
-    let skipCount = 0;
-
-    for (let i = 0; i < rankedPlayers.length; i++) {
-      // 找出此選手在原數組中的索引
-      const playerIndex = playersWithAuxScores.findIndex(p => p.number === rankedPlayers[i].number);
-      
-      if (i > 0) {
-        // 檢查和前一位選手是否得分相同
-        const prevPlayer = rankedPlayers[i - 1];
-        const currentPlayer = rankedPlayers[i];
-        
-        const isTied = currentPlayer.totalScore === prevPlayer.totalScore && 
-                      currentPlayer.auxScore1 === prevPlayer.auxScore1 && 
-                      currentPlayer.auxScore2 === prevPlayer.auxScore2 &&
-                      currentPlayer.auxScore3 === prevPlayer.auxScore3;
-
-        if (isTied) {
-          // 與前一位選手並列，使用相同名次
-          playersWithAuxScores[playerIndex].rank = currentRank;
-          skipCount++;
-        } else {
-          // 不是並列，名次需要跳過已經使用的數量
-          currentRank += skipCount + 1;
-          skipCount = 0;
-          playersWithAuxScores[playerIndex].rank = currentRank;
-        }
-      } else {
-        // 第一位選手，名次為1
-        playersWithAuxScores[playerIndex].rank = currentRank;
-      }
-    }
+    // 計算輔分與名次
+    const playersWithAuxScores = recomputeRanks(updatedPlayers);
 
     // 在計算完分數後，啟用「抓對」按鈕
     setIsPairingButtonDisabled(false);
