@@ -2025,8 +2025,8 @@ const handleFileUpload = (event) => {
       seen.add(n);
     });
 
-    // 檢查2（hard）：有選手未排入本輪
-    players.forEach(p => {
+    // 檢查2（hard）：有選手未排入本輪（棄賽隊本來就不在桌次中，不視為錯誤）
+    players.filter(p => p.status !== 'withdrawn').forEach(p => {
       if (!appearing.includes(p.number)) {
         hardErrors.push(`⚠ 選手 ${getPlayerName(p.number)} 未排入本輪配對`);
       }
