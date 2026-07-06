@@ -17,6 +17,7 @@ const {
   computeFloatBalance,
   calculateAuxiliaryScores,
   generateSwissPairings,
+  isActiveForRound,
 } = require(path.join(__dirname, '..', '..', 'tournament-menager', 'src', 'lib', 'swissPairing.js'));
 
 const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures');
@@ -105,9 +106,9 @@ function replay(label, allPlayers, totalRounds) {
     const withTotals = recomputeTotals(view, target - 1);
     const withAux = calculateAuxiliaryScores(withTotals, WIN_POINT);
 
-    // 棄賽隊不再進入配對池（鏡像 App wrapper：呼叫核心前過濾 active 名單）。
+    // 棄賽隊不再進入配對池（與 App wrapper 共用 isActiveForRound，語意不會漂移）。
     // 注意輔分仍以全體計算（withAux），讓退賽隊已打成績照算進對手輔分一/二。
-    const active = withAux.filter((p) => p.withdrawnRound == null || p.withdrawnRound > target);
+    const active = withAux.filter((p) => isActiveForRound(p, target));
 
     const result = generateSwissPairings(active, target);
     if (!result.ok) {

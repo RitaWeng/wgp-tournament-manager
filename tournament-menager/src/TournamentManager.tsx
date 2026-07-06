@@ -9,6 +9,8 @@ import packageInfo from '../package.json';
 import {
   calculateAuxiliaryScores as calculateAuxiliaryScoresCore,
   generateSwissPairings as generateSwissPairingsCore,
+  isWithdrawn,
+  isActiveForRound,
 } from './lib/swissPairing';
 
 // in-page 對話框（取代原生 alert / confirm / prompt）
@@ -557,8 +559,9 @@ const TournamentManager = () => {
       setAllPlayers(appState.allPlayers);
       setRounds(appState.rounds);
       setWinPoint(appState.winPoint);
-      // 向後相容：舊存檔的選手沒有 status/withdrawnRound，補上預設（缺欄位才補，既有值保留）
-      setPlayers((appState.players || []).map(p => ({ status: 'active', withdrawnRound: null, ...p })));
+      // 向後相容：舊存檔的選手沒有 withdrawnRound，補上預設（缺欄位才補，既有值保留）；
+      // 一併剝除已廢棄的 status 欄位（棄賽狀態以 withdrawnRound 為唯一事實來源）
+      setPlayers((appState.players || []).map(({ status, ...p }) => ({ withdrawnRound: null, ...p })));
       setMatches(appState.matches);
       setMatchesByRound(appState.matchesByRound);
       setSortByRank(appState.sortByRank);
@@ -655,8 +658,9 @@ const TournamentManager = () => {
         setAllPlayers(appState.allPlayers);
         setRounds(appState.rounds);
         setWinPoint(appState.winPoint);
-        // 向後相容：舊存檔的選手沒有 status/withdrawnRound，補上預設（缺欄位才補，既有值保留）
-      setPlayers((appState.players || []).map(p => ({ status: 'active', withdrawnRound: null, ...p })));
+        // 向後相容：舊存檔的選手沒有 withdrawnRound，補上預設（缺欄位才補，既有值保留）；
+        // 一併剝除已廢棄的 status 欄位（棄賽狀態以 withdrawnRound 為唯一事實來源）
+        setPlayers((appState.players || []).map(({ status, ...p }) => ({ withdrawnRound: null, ...p })));
         setMatches(appState.matches);
         setMatchesByRound(appState.matchesByRound);
         setSortByRank(appState.sortByRank);
@@ -733,7 +737,7 @@ const handleToggleWithdraw = async (playerNumber) => {
   const player = players.find(p => p.number === playerNumber);
   if (!player) return;
 
-  if (player.status === 'withdrawn') {
+  if (isWithdrawn(player)) {
     const ok = await dialog.confirm({
       title: '恢復參賽',
       message: `確定讓「${player.name}」恢復參賽？\n將重新納入正式名次與後續抓對。`,
@@ -742,7 +746,7 @@ const handleToggleWithdraw = async (playerNumber) => {
     });
     if (!ok) return;
     setPlayers(players.map(p =>
-      p.number === playerNumber ? { ...p, status: 'active', withdrawnRound: null } : p
+      p.number === playerNumber ? { ...p, withdrawnRound: null } : p
     ));
     return;
   }
@@ -759,7 +763,7 @@ const handleToggleWithdraw = async (playerNumber) => {
   });
   if (!ok) return;
   setPlayers(players.map(p =>
-    p.number === playerNumber ? { ...p, status: 'withdrawn', withdrawnRound: effectiveRound } : p
+    p.number === playerNumber ? { ...p, withdrawnRound: effectiveRound } : p
   ));
 };
 
@@ -873,8 +877,7 @@ const handleToggleWithdraw = async (playerNumber) => {
           name: `隊伍${i}`,
           level: '',
           country: '',
-          status: 'active',        // 'active' | 'withdrawn'：是否仍在賽
-          withdrawnRound: null,    // 從第幾輪起棄賽（1-based）；null 表示未棄賽
+          withdrawnRound: null,    // 從第幾輪起棄賽（1-based）；null 表示未棄賽（唯一事實來源）
           totalScore: 0,
           rank: i,
           auxScore1: 0, // 輔分一：所遇對手之總分和
@@ -1011,8 +1014,8 @@ const handleToggleWithdraw = async (playerNumber) => {
   // 包成 React state 需要的格式（補上 round / player1IsBlack），並把無解情境
   // 轉成對話框訊息。回傳 true 代表已產生桌次表，false 代表中止（呼叫端應據此決定是否鎖按鈕）。
   const generateSwissPairings = async (): Promise<boolean> => {
-    // 棄賽隊不進入配對池；只有仍在賽（active）的隊伍參與抓對
-    const activePlayers = players.filter(p => p.status !== 'withdrawn');
+    // 棄賽隊不進入配對池；過濾採 round-aware（棄賽生效輪之前的輪次重抓時，該隊仍應在池中）
+    const activePlayers = players.filter(p => isActiveForRound(p, currentRound));
     if (activePlayers.length < 2) {
       message.warning('在賽隊伍人數不足，無法抓對');
       return false;
@@ -1164,9 +1167,9 @@ const handleToggleWithdraw = async (playerNumber) => {
     const playersWithAuxScores = calculateAuxiliaryScores(updatedPlayers);
     
     // 更新排名：退賽隊不佔正式名次（rank=null），只對仍在賽（active）的隊伍排名
-    playersWithAuxScores.forEach(p => { if (p.status === 'withdrawn') p.rank = null; });
+    playersWithAuxScores.forEach(p => { if (isWithdrawn(p)) p.rank = null; });
     const rankedPlayers = playersWithAuxScores
-      .filter(p => p.status !== 'withdrawn')
+      .filter(p => !isWithdrawn(p))
       .sort((a, b) => {
       // 先按總分排序
       if (b.totalScore !== a.totalScore) {
@@ -1711,7 +1714,6 @@ const handleFileUpload = (event) => {
               name: `隊伍${i}`,
               level: '',
               country: '',
-              status: 'active',
               withdrawnRound: null,
               totalScore: 0,
               rank: i,
@@ -1876,8 +1878,8 @@ const handleFileUpload = (event) => {
   const getSortedPlayers = () => {
     return [...players].sort((a, b) => {
       // 退賽隊一律沉到最後一區
-      const aw = a.status === 'withdrawn' ? 1 : 0;
-      const bw = b.status === 'withdrawn' ? 1 : 0;
+      const aw = isWithdrawn(a) ? 1 : 0;
+      const bw = isWithdrawn(b) ? 1 : 0;
       if (aw !== bw) return aw - bw;
       if (sortByRank) {
         // 退賽隊無正式名次（rank=null），彼此間依凍結分數（總分→輔分→籤號）排序
@@ -2025,8 +2027,8 @@ const handleFileUpload = (event) => {
       seen.add(n);
     });
 
-    // 檢查2（hard）：有選手未排入本輪（棄賽隊本來就不在桌次中，不視為錯誤）
-    players.filter(p => p.status !== 'withdrawn').forEach(p => {
+    // 檢查2（hard）：有選手未排入本輪（該輪已棄賽的隊本來就不在桌次中，不視為錯誤）
+    players.filter(p => isActiveForRound(p, round)).forEach(p => {
       if (!appearing.includes(p.number)) {
         hardErrors.push(`⚠ 選手 ${getPlayerName(p.number)} 未排入本輪配對`);
       }
@@ -2213,13 +2215,13 @@ const handleFileUpload = (event) => {
   const WithdrawButton = ({ player }: { player: any }) => (
     <button
       onClick={() => handleToggleWithdraw(player.number)}
-      title={player.status === 'withdrawn' ? '恢復參賽' : '標記棄賽'}
+      title={isWithdrawn(player) ? '恢復參賽' : '標記棄賽'}
       className={`px-2 h-7 rounded-md text-[11px] border transition-colors whitespace-nowrap flex-shrink-0
-        ${player.status === 'withdrawn'
+        ${isWithdrawn(player)
           ? 'border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--bg-hover)]'
           : 'border-[var(--border-default)] text-[var(--text-muted)] hover:text-[var(--loss)] hover:border-[var(--loss)]'}`}
     >
-      {player.status === 'withdrawn' ? '恢復' : '棄賽'}
+      {isWithdrawn(player) ? '恢復' : '棄賽'}
     </button>
   );
 
@@ -2271,15 +2273,15 @@ const handleFileUpload = (event) => {
               <div className="text-xs uppercase tracking-wider text-[var(--text-muted)] px-2 pt-2 font-semibold">其他</div>
             )}
             {rest.map(p => (
-              <div key={p.number} className={`flex items-center gap-3 px-2 py-2.5 rounded-md hover:bg-[var(--bg-hover)] transition-colors ${p.status === 'withdrawn' ? 'opacity-55' : ''}`}>
-                <span className="font-mono-num text-sm font-semibold text-[var(--text-secondary)] w-7 text-center tabular">{p.status === 'withdrawn' ? '—' : (p.rank || '—')}</span>
+              <div key={p.number} className={`flex items-center gap-3 px-2 py-2.5 rounded-md hover:bg-[var(--bg-hover)] transition-colors ${isWithdrawn(p) ? 'opacity-55' : ''}`}>
+                <span className="font-mono-num text-sm font-semibold text-[var(--text-secondary)] w-7 text-center tabular">{isWithdrawn(p) ? '—' : (p.rank || '—')}</span>
                 <span className="font-mono-num text-xs text-[var(--text-disabled)] w-7 tabular">#{p.number}</span>
                 <div className="flex-1 min-w-0 flex items-center gap-2">
                   {editMode
                     ? <input type="text" value={p.name} onChange={e => handlePlayerNameChange(p.number, e.target.value)} className="px-2 h-8 text-base flex-1"/>
-                    : <div className={`text-base font-medium truncate ${p.status === 'withdrawn' ? 'line-through' : ''}`}>{p.name}</div>
+                    : <div className={`text-base font-medium truncate ${isWithdrawn(p) ? 'line-through' : ''}`}>{p.name}</div>
                   }
-                  {p.status === 'withdrawn' && <Pill tone="muted" size="sm">棄賽</Pill>}
+                  {isWithdrawn(p) && <Pill tone="muted" size="sm">棄賽</Pill>}
                   {editMode && <WithdrawButton player={p}/>}
                 </div>
                 <RecordBar player={p}/>
@@ -2315,16 +2317,16 @@ const handleFileUpload = (event) => {
         </thead>
         <tbody>
           {sortedPlayers.map(p => (
-            <tr key={p.number} className={p.status === 'withdrawn' ? 'opacity-55' : ''}>
-              <td className="px-3 py-2.5"><RankMedal rank={p.status === 'withdrawn' ? undefined : p.rank}/></td>
+            <tr key={p.number} className={isWithdrawn(p) ? 'opacity-55' : ''}>
+              <td className="px-3 py-2.5"><RankMedal rank={isWithdrawn(p) ? undefined : p.rank}/></td>
               <td className="px-2 py-2.5 font-mono-num text-sm text-[var(--text-muted)]">#{p.number}</td>
               <td className="px-2 py-2.5 max-w-40">
                 <div className="flex items-center gap-2 min-w-0">
                   {editMode
                     ? <input type="text" value={p.name} onChange={e => handlePlayerNameChange(p.number, e.target.value)} className="px-2 h-8 text-base w-full"/>
-                    : <span className={`font-semibold text-base block truncate ${p.status === 'withdrawn' ? 'line-through' : ''}`} title={p.name}>{p.name}</span>
+                    : <span className={`font-semibold text-base block truncate ${isWithdrawn(p) ? 'line-through' : ''}`} title={p.name}>{p.name}</span>
                   }
-                  {p.status === 'withdrawn' && <Pill tone="muted" size="sm">棄賽</Pill>}
+                  {isWithdrawn(p) && <Pill tone="muted" size="sm">棄賽</Pill>}
                   {editMode && <WithdrawButton player={p}/>}
                 </div>
               </td>

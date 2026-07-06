@@ -45,6 +45,19 @@
  * @param {Player[]} playersList
  * @returns {Map<number, number>} 籤號 → 累積輪動值
  */
+/**
+ * 棄賽狀態的唯一事實來源：withdrawnRound（1-based，從第幾輪起不再出賽）。
+ *  - isWithdrawn：是否已宣告棄賽（UI 標記、名次排除用）
+ *  - isActiveForRound：該輪是否仍在賽（配對池過濾用；棄賽生效輪之前的輪次仍算在賽）
+ */
+function isWithdrawn(player) {
+  return player.withdrawnRound != null;
+}
+
+function isActiveForRound(player, round) {
+  return player.withdrawnRound == null || round < player.withdrawnRound;
+}
+
 function computeFloatBalance(playersList) {
   const fb = new Map(playersList.map((p) => [p.number, 0]));
   if (playersList.length === 0) return fb;
@@ -403,4 +416,6 @@ module.exports = {
   computeFloatBalance,
   calculateAuxiliaryScores,
   generateSwissPairings,
+  isWithdrawn,
+  isActiveForRound,
 };
