@@ -191,16 +191,16 @@ Judge（`Authorization: Bearer <table token>`）：
 
 ## 8. 分階段執行計劃
 
-### Phase 0：基礎建設（~0.5 天）
-- [ ] Cloudflare 帳號 + wrangler CLI（帳號建立與登入由 rita 操作）
-- [ ] repo 新增 `backend/` 目錄（monorepo）：Hono 專案骨架 + D1 schema + `wrangler dev` 本地環境
+### Phase 0：基礎建設（~0.5 天）✅ 2026-07-07
+- [ ] Cloudflare 帳號 + wrangler CLI（帳號建立與登入由 rita 操作；本地開發不需要，部署前補即可）
+- [x] repo 新增 `backend/` 目錄（monorepo）：Hono 專案骨架 + D1 schema + `wrangler dev` 本地環境
 - **驗收**：`wrangler dev` 起得來，health check 回 200；既有前端 build 不受影響
 
-### Phase 1：後端 MVP（~2 天）
-- [ ] Admin API 全套（見第 7 節，含各桌上線狀態）
-- [ ] Judge API 全套
-- [ ] 第 4.2 節所有伺服器端驗證 + rate limit + CORS
-- [ ] 後端單元測試（本地 D1）
+### Phase 1：後端 MVP（~2 天）✅ 2026-07-07
+- [x] Admin API 全套（見第 7 節，含各桌上線狀態；另加 GET audit 查稽核）
+- [x] Judge API 全套
+- [x] 第 4.2 節所有伺服器端驗證 + rate limit + CORS
+- [x] 後端測試（`backend/npm test`：spawn 真實 wrangler dev + 本地 D1 的 HTTP 整合測試，21 項）
 - **驗收**：測試涵蓋——越權提交被拒、locked 輪次提交被拒、重複提交 idempotent、
   錯誤 token 401、**同桌 device_id 變化入稽核並可由主控端查得**
 

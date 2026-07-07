@@ -13,3 +13,13 @@ binding = "DB"
 database_name = "wgp_score_relay"
 # 佔位 id：本地開發（Miniflare）不驗證；正式部署前由 rita 以 `wrangler d1 create` 取得後替換
 database_id = "00000000-0000-0000-0000-000000000000"
+
+[vars]
+# CORS allowlist：正式 GitHub Pages ＋ 本地開發（webpack dev server / 驗收用）。
+# localhost 項目留著無實害（授權靠 Bearer token，CORS 是縱深防禦），要收緊可自行移除
+ALLOWED_ORIGINS = "https://ritaweng.github.io,http://localhost:8080,http://127.0.0.1:8080"
+RATE_LIMIT_PER_MIN = "120"
+
+# 7 天 retention 雙保險：每日清一次過期賽事（見 src/index.ts scheduled）
+[triggers]
+crons = ["17 19 * * *"]  # UTC 19:17 = 台北 03:17

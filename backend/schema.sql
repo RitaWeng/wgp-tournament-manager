@@ -12,13 +12,15 @@ CREATE TABLE IF NOT EXISTS events (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- 各桌：table token 綁桌次；last_device_id 供軟性裝置偵測（變化入稽核，不拒絕）
+-- 各桌：table token 綁桌次；last_device_id / device_change_count 供軟性裝置偵測
+-- （device_id 變化不拒絕、只入稽核並累計次數，主控端據此標示）
 CREATE TABLE IF NOT EXISTS tables (
     event_id TEXT NOT NULL REFERENCES events(id),
     table_no INTEGER NOT NULL,
     token_hash TEXT NOT NULL,
     last_device_id TEXT,
     last_seen_at TEXT,
+    device_change_count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (event_id, table_no)
 );
 CREATE INDEX IF NOT EXISTS idx_tables_token ON tables (token_hash);
