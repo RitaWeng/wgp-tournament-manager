@@ -17,6 +17,7 @@
     "author": "Rita Weng <rita6656@gmail.com>",
     "license": "ISC",
     "dependencies": {
+        "qrcode": "^1.5.4",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
         "xlsx": "^0.18.5"

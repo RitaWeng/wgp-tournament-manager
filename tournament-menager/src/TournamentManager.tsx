@@ -17,6 +17,11 @@ import {
 // in-page 對話框（取代原生 alert / confirm / prompt）
 import { dialog } from './lib/dialog';
 
+// 線上成績回報同步（規格：docs/online-score-reporting-plan.md）。
+// 只在建立線上賽事後啟用；後端不可用時所有既有功能行為不變（不變式 2）
+import * as onlineSync from './lib/sync';
+import QRCode from 'qrcode';
+
 // 下載CSV函數
 const downloadCSV = (content, fileName) => {
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
@@ -504,6 +509,18 @@ const TournamentManager = () => {
   const [headerCollapsed, setHeaderCollapsed] = useState<boolean>(false);
   // UI 重構：左欄排行榜顯示模式（compact = 卡片式、detail = 詳細表格）
   const [viewMode, setViewMode] = useState<'compact' | 'detail'>('detail');
+
+  // ── 線上成績回報（規格：docs/online-score-reporting-plan.md）──
+  const [onlineCfg, setOnlineCfg] = useState<onlineSync.SyncConfig | null>(() => onlineSync.loadSyncConfig());
+  const [showOnlinePanel, setShowOnlinePanel] = useState(false);
+  const [onlineApiDraft, setOnlineApiDraft] = useState('');
+  const [onlineLastSync, setOnlineLastSync] = useState<string | null>(null);
+  const [onlineError, setOnlineError] = useState<string | null>(null);
+  const [tablesStatus, setTablesStatus] = useState<onlineSync.TableStatusRow[] | null>(null);
+  // 已處理的裁判回報：key `${round}-${table}` → 已見版本與勝方；dismissed = 操作者拒絕採計該版本
+  const [judgeReports, setJudgeReports] = useState<Record<string, { version: number; winner: number; dismissed?: boolean }>>({});
+  // matchesByRound 經裁判回報批次更新後，讓 matches（當前輪視圖）跟上的訊號
+  const [judgeApplyTick, setJudgeApplyTick] = useState(0);
   // UI 重構：桌次卡片是否進入「修改配對」模式（兩側選手變成 select 可換人）
   const [pairingEditMode, setPairingEditMode] = useState<boolean>(false);
   // 初次使用引導橫幅是否已被使用者手動關閉
@@ -1274,6 +1291,12 @@ const handleToggleWithdraw = async (playerNumber) => {
     // 將此輪加入鎖定清單
     setScoredRounds(prev => prev.includes(currentRound) ? prev : [...prev, currentRound]);
 
+    // 線上模式：算分即同步鎖定該輪，伺服器拒收裁判再提交（規劃 §5）
+    if (onlineCfg) {
+      onlineSync.lockRound(onlineCfg, currentRound)
+        .catch(e => message.warning(`線上鎖定第 ${currentRound} 輪失敗（${e.message}），裁判端可能仍可送出更正`));
+    }
+
     setPlayers(playersWithAuxScores);
   };
 
@@ -2004,6 +2027,239 @@ const handleFileUpload = (event) => {
     setSelectedRound(round);
     setMatches(matchesByRound[round] || []);
     setIsPairingButtonDisabled(true); // 禁止重新抓對，直到重新算分
+
+    // 線上模式：解除鎖定同步到後端，裁判端恢復可更正
+    if (onlineCfg) {
+      onlineSync.unlockRoundRemote(onlineCfg, round)
+        .catch(e => message.warning(`線上解除鎖定第 ${round} 輪失敗（${e.message}），裁判端仍會被擋`));
+    }
+  };
+
+  // ── 線上成績回報：輪詢與套用（規格 §5；所有邏輯以 onlineCfg 存在為前提）──
+
+  // 輪詢 handler 透過 ref 呼叫「當次 render 的新函式」，避免 interval 閉包吃到舊 state
+  const processJudgeResultsRef = useRef<(rows: onlineSync.JudgeResultRow[]) => Promise<void>>();
+  // 正在跳確認視窗的桌次，避免同一筆更正重複開窗
+  const revisionPromptOpen = useRef<Set<string>>(new Set());
+
+  // 批次套用裁判回報（functional update：同一次輪詢多筆結果不互相蓋寫）
+  const applyJudgeWins = (wins: { roundNo: number; tableNo: number; winnerNumber: number }[]) => {
+    if (!wins.length) return;
+    setMatchesByRound(prev => {
+      const next = { ...prev };
+      for (const w of wins) {
+        const arr = [...(next[w.roundNo] || [])];
+        const idx = arr.findIndex((m: any) => m.table === w.tableNo);
+        if (idx === -1) continue;
+        const m = { ...arr[idx] };
+        if (m.player2 === 0) continue; // 輪空桌不會發佈，防禦性略過
+        m.player1Score = m.player1 === w.winnerNumber ? winPoint : 0;
+        arr[idx] = m;
+        next[w.roundNo] = arr;
+      }
+      return next;
+    });
+    setJudgeApplyTick(t => t + 1);
+  };
+
+  // matches（當前輪視圖）跟上 matchesByRound 的裁判回報更新
+  useEffect(() => {
+    if (!judgeApplyTick) return;
+    setMatches(matchesByRound[currentRound] || []);
+  }, [judgeApplyTick]);
+
+  const processJudgeResults = async (rows: onlineSync.JudgeResultRow[]) => {
+    const autoWins: { roundNo: number; tableNo: number; winnerNumber: number }[] = [];
+    const reportMarks: Record<string, { version: number; winner: number; dismissed?: boolean }> = {};
+    const conflicts: { row: onlineSync.JudgeResultRow; winnerNumber: number; localWinner: number | null }[] = [];
+
+    for (const row of rows) {
+      const key = `${row.round_no}-${row.table_no}`;
+      const known = judgeReports[key];
+      if (known && known.version >= row.version) continue;      // 這個版本已處理（採計或拒絕）過
+      if (scoredRounds.includes(row.round_no)) continue;         // 本地已算分鎖定，不動既有結果
+      const match = (matchesByRound[row.round_no] || []).find((m: any) => m.table === row.table_no);
+      if (!match || match.player2 === 0) continue;
+      // 桌次重發過（本地選手與回報不一致）→ 忽略舊回報
+      if (match.player1 !== row.player1_id || match.player2 !== row.player2_id) continue;
+
+      const winnerNumber = row.result === 1 ? match.player1 : match.player2;
+      const localRecorded = match.player1Score !== undefined;
+      const localWinner = localRecorded ? (match.player1Score === winPoint ? match.player1 : match.player2) : null;
+
+      if (localRecorded && localWinner === winnerNumber) {
+        reportMarks[key] = { version: row.version, winner: winnerNumber }; // 結果一致，只記來源
+      } else if (localRecorded || (known && !known.dismissed)) {
+        conflicts.push({ row, winnerNumber, localWinner });                // 更正/衝突 → 需操作者確認（4.3）
+      } else {
+        autoWins.push({ roundNo: row.round_no, tableNo: row.table_no, winnerNumber });
+        reportMarks[key] = { version: row.version, winner: winnerNumber };
+      }
+    }
+
+    applyJudgeWins(autoWins);
+    if (Object.keys(reportMarks).length) setJudgeReports(prev => ({ ...prev, ...reportMarks }));
+
+    // 衝突逐筆確認：revision（已送出又被更改）一律醒目警示，採計與否都記版本避免重複跳窗
+    for (const c of conflicts) {
+      const key = `${c.row.round_no}-${c.row.table_no}`;
+      if (revisionPromptOpen.current.has(key)) continue;
+      revisionPromptOpen.current.add(key);
+      try {
+        const ok = await dialog.confirm({
+          title: '裁判回報更正',
+          message: `第 ${c.row.round_no} 輪・桌 ${c.row.table_no}：裁判回報勝方為「${getPlayerName(c.winnerNumber)}」，` +
+            `與目前登錄（${c.localWinner != null ? `「${getPlayerName(c.localWinner)}」勝` : '未登錄'}）不同。\n要採計裁判的回報嗎？`,
+          tone: 'warn',
+          danger: true,
+          okText: '採計裁判回報',
+          cancelText: '維持現狀',
+        });
+        if (ok) {
+          applyJudgeWins([{ roundNo: c.row.round_no, tableNo: c.row.table_no, winnerNumber: c.winnerNumber }]);
+          setJudgeReports(prev => ({ ...prev, [key]: { version: c.row.version, winner: c.winnerNumber } }));
+        } else {
+          setJudgeReports(prev => ({ ...prev, [key]: { version: c.row.version, winner: c.winnerNumber, dismissed: true } }));
+        }
+      } finally {
+        revisionPromptOpen.current.delete(key);
+      }
+    }
+  };
+  processJudgeResultsRef.current = processJudgeResults;
+
+  // 成績輪詢（4 秒；規劃 §2 規模下輪詢已足夠）
+  useEffect(() => {
+    if (!onlineCfg) { setOnlineLastSync(null); setOnlineError(null); return; }
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const rows = await onlineSync.fetchResults(onlineCfg);
+        if (cancelled) return;
+        setOnlineError(null);
+        setOnlineLastSync(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
+        await processJudgeResultsRef.current?.(rows);
+      } catch (e: any) {
+        if (!cancelled) setOnlineError(e.message === 'unauthorized' ? '賽事已結束或憑證失效' : `連線失敗：${e.message}`);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 4000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [onlineCfg]);
+
+  // 各桌狀態輪詢（面板開著才跑，10 秒一次）
+  useEffect(() => {
+    if (!showOnlinePanel || !onlineCfg) return;
+    let cancelled = false;
+    const tick = () => onlineSync.fetchTablesStatus(onlineCfg)
+      .then(t => { if (!cancelled) setTablesStatus(t); })
+      .catch(() => { if (!cancelled) setTablesStatus(null); });
+    tick();
+    const id = setInterval(tick, 10000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [showOnlinePanel, onlineCfg]);
+
+  // 建立線上賽事：桌數 = ceil(隊數/2)（含可能的輪空桌，桌號與桌次表一致）
+  const createOnlineEvent = async () => {
+    const apiBase = onlineApiDraft.trim().replace(/\/+$/, '');
+    if (!/^https?:\/\/.+/.test(apiBase)) {
+      message.warning('請先輸入後端 API 網址（如 https://wgp-score-relay.xxx.workers.dev）');
+      return;
+    }
+    const tables = Math.ceil(allPlayers / 2);
+    try {
+      const cfg = await onlineSync.createEvent(apiBase, gameTitle, tables);
+      onlineSync.saveSyncConfig(cfg);
+      setOnlineCfg(cfg);
+      setJudgeReports({});
+      message.success(`線上賽事已建立（${tables} 桌）。請按「列印 QR 卡」交給計分台保管，裁判報到時當面掃碼。`);
+    } catch (e: any) {
+      message.error(`建立線上賽事失敗：${e.message}`);
+    }
+  };
+
+  // 發佈本輪桌次（輪空桌不發佈，由主控端照現行邏輯處理；規劃 §6）
+  const publishCurrentRoundPairings = async () => {
+    if (!onlineCfg) return;
+    const roundMatches = matchesByRound[currentRound] || [];
+    if (!roundMatches.length) {
+      message.warning(`第 ${currentRound} 輪尚未抓對，無桌次可發佈`);
+      return;
+    }
+    const pairings = roundMatches
+      .filter((m: any) => m.player2 !== 0)
+      .map((m: any) => ({
+        tableNo: m.table,
+        player1Id: m.player1, player1Name: getPlayerName(m.player1),
+        player2Id: m.player2, player2Name: getPlayerName(m.player2),
+      }));
+    try {
+      await onlineSync.publishPairings(onlineCfg, currentRound, pairings);
+      message.success(`已發佈第 ${currentRound} 輪桌次（${pairings.length} 桌），裁判手機數秒內會更新`);
+    } catch (e: any) {
+      message.error(e.message === 'round_locked'
+        ? `第 ${currentRound} 輪在伺服器上為鎖定狀態，請先解除鎖定再發佈`
+        : `發佈桌次失敗：${e.message}`);
+    }
+  };
+
+  // 結束線上賽事：伺服器資料立即刪除、token 全數失效（個資最小化；規劃 §3）
+  const closeOnlineEvent = async () => {
+    if (!onlineCfg) return;
+    const ok = await dialog.confirm({
+      title: '結束線上賽事',
+      message: '確定要結束線上賽事嗎？\n伺服器上的配對、回報與稽核資料將立即刪除，所有 QR 卡隨之失效。\n（本機的比賽資料不受影響）',
+      tone: 'warn',
+      danger: true,
+      okText: '結束並刪除',
+    });
+    if (!ok) return;
+    try {
+      await onlineSync.closeEvent(onlineCfg);
+      message.success('線上賽事已結束，伺服器資料已刪除');
+    } catch (e: any) {
+      // 憑證已失效（多半是已被結束過）→ 照樣清掉本機設定
+      if (e.message !== 'unauthorized') {
+        message.error(`結束線上賽事失敗：${e.message}`);
+        return;
+      }
+    }
+    onlineSync.saveSyncConfig(null);
+    setOnlineCfg(null);
+    setTablesStatus(null);
+    setJudgeReports({});
+  };
+
+  // 列印裁判 QR 卡（印出後由計分台保管——卡片上有註記；規劃 4.1）
+  const printQrCards = async () => {
+    if (!onlineCfg) return;
+    const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] as string));
+    const cards = await Promise.all(onlineCfg.tableTokens.map(async t => ({
+      tableNo: t.tableNo,
+      dataUrl: await QRCode.toDataURL(onlineSync.judgeUrl(onlineCfg, t), { width: 240, margin: 1 }),
+    })));
+    const w = window.open('', '_blank');
+    if (!w) {
+      message.error('瀏覽器擋下了彈出視窗，請允許本站開新視窗後再試一次');
+      return;
+    }
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>裁判 QR 卡 — ${esc(onlineCfg.eventName)}</title>
+<style>
+  body{font-family:system-ui,-apple-system,'PingFang TC','Microsoft JhengHei',sans-serif;margin:0;padding:16px;}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
+  .card{border:1.5px dashed #999;border-radius:12px;padding:16px;text-align:center;page-break-inside:avoid;}
+  .t{font-size:28px;font-weight:800;margin-bottom:2px;}
+  .e{font-size:14px;color:#555;margin-bottom:8px;}
+  .warn{font-size:12px;color:#a33;margin-top:8px;line-height:1.6;}
+</style></head><body><div class="grid">${cards.map(c => `
+  <div class="card">
+    <div class="t">桌 ${c.tableNo}</div>
+    <div class="e">${esc(onlineCfg.eventName)} · 裁判成績回報</div>
+    <img src="${c.dataUrl}" width="240" height="240"/>
+    <div class="warn">本卡由<b>計分台</b>保管，不上桌、不隨身帶。<br/>裁判報到時當面掃碼，掃完即收回。</div>
+  </div>`).join('')}</div><script>window.onload = () => window.print();</script></body></html>`);
+    w.document.close();
   };
 
   // 直接修改某桌某方的選手
@@ -2192,8 +2448,18 @@ const handleFileUpload = (event) => {
       );
     };
 
+    // 線上模式：此桌結果採計自裁判回報時顯示來源標示
+    const judgeReported = onlineCfg && recorded &&
+      judgeReports[`${round}-${match.table}`] && !judgeReports[`${round}-${match.table}`].dismissed;
+
     return (
-      <div className="elevated rounded-lg overflow-hidden">
+      <div className="elevated rounded-lg overflow-hidden relative">
+        {judgeReported && (
+          <span
+            className="absolute top-0.5 right-0.5 z-10 text-[10px] px-1.5 py-0.5 rounded bg-[var(--info-soft)] text-[var(--info)] font-medium"
+            title="此結果由裁判線上回報"
+          >裁判</span>
+        )}
         <div className="flex items-stretch">
           {TableCell}
           <div className="flex-1 flex flex-col sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center divide-y sm:divide-y-0 sm:divide-x divide-[var(--border-subtle)] min-w-0">
@@ -2828,6 +3094,16 @@ const handleFileUpload = (event) => {
             >
               <Icon name="calculator" className="w-4 h-4"/> 算分
             </button>
+            {onlineCfg && (
+              <button
+                onClick={publishCurrentRoundPairings}
+                disabled={!(matchesByRound[currentRound] || []).length}
+                className="btn-ghost px-3 h-9 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap"
+                title="把本輪桌次上傳到線上回報後端，裁判手機掃碼後即可看到"
+              >
+                <Icon name="upload" className="w-4 h-4"/> 發佈桌次
+              </button>
+            )}
           </div>
         );
 
@@ -3074,6 +3350,18 @@ const handleFileUpload = (event) => {
                     <span className="opacity-70 text-sm font-normal hidden sm:inline">結算 R{currentRound}</span>
                     <span className="opacity-70 text-sm font-normal sm:hidden">R{currentRound}</span>
                   </button>
+                  {onlineCfg && (
+                    <button
+                      onClick={publishCurrentRoundPairings}
+                      disabled={!(matchesByRound[currentRound] || []).length}
+                      className="btn-ghost px-3 h-10 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap"
+                      title="把本輪桌次上傳到線上回報後端，裁判手機掃碼後即可看到"
+                    >
+                      <Icon name="upload" className="w-4 h-4"/>
+                      <span className="hidden xl:inline">發佈桌次</span>
+                      <span className="xl:hidden">發佈</span>
+                    </button>
+                  )}
 
                   <div className="hidden sm:block w-px h-8 bg-[var(--border-default)] mx-1"/>
 
@@ -3089,6 +3377,15 @@ const handleFileUpload = (event) => {
                   >
                     <Icon name="download" className="w-4 h-4"/>
                     <span className="hidden xl:inline">匯入/匯出</span>
+                  </button>
+                  <button
+                    onClick={() => setShowOnlinePanel(v => !v)}
+                    className={`btn-ghost px-3 h-10 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap ${onlineCfg ? 'text-[var(--win)]' : ''}`}
+                    title="線上成績回報：裁判用手機回報該桌勝負"
+                  >
+                    <Icon name="monitor" className="w-4 h-4"/>
+                    <span className="hidden xl:inline">線上回報</span>
+                    {onlineCfg && <span className={`w-1.5 h-1.5 rounded-full ${onlineError ? 'bg-[var(--warn)]' : 'bg-[var(--win)]'}`}/>}
                   </button>
                   <button
                     onClick={resetSystem}
@@ -3130,6 +3427,79 @@ const handleFileUpload = (event) => {
                       </div>
                       <div className="text-[var(--text-muted)] text-xs">把目前所有資料（隊伍、輪次、分數）打包為 JSON 檔，可匯出備份或在另一台電腦上「上傳狀態」還原。</div>
                     </div>
+                  </div>
+                )}
+
+                {/* 線上成績回報區塊（規格：docs/online-score-reporting-plan.md） */}
+                {showOnlinePanel && (
+                  <div className="p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] space-y-3 text-sm">
+                    {!onlineCfg ? (
+                      <div>
+                        <div className="font-semibold text-[var(--text-secondary)] mb-1.5">建立線上賽事</div>
+                        <div className="text-[var(--text-muted)] text-xs mb-2 leading-relaxed">
+                          建立後會產生各桌裁判 QR 卡（交由計分台保管），裁判掃碼即可用手機回報該桌勝負；
+                          主控端自動收成績。後端不可用時，照常手動點選登錄，比賽不中斷。
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="text"
+                            value={onlineApiDraft}
+                            onChange={e => setOnlineApiDraft(e.target.value)}
+                            placeholder="後端 API 網址（https://wgp-score-relay.….workers.dev）"
+                            className="px-2 h-8 text-sm flex-1 min-w-64"
+                          />
+                          <Button onClick={createOnlineEvent} type="primary">建立線上賽事（{Math.ceil(allPlayers / 2)} 桌）</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-[var(--text-secondary)]">線上賽事</span>
+                          <span>{onlineCfg.eventName} · {onlineCfg.tableTokens.length} 桌</span>
+                          <Pill tone={onlineError ? 'muted' : 'accent'} size="sm">{onlineError ? '連線異常' : '已連線'}</Pill>
+                          {onlineLastSync && !onlineError && (
+                            <span className="text-xs text-[var(--text-muted)] tabular">上次同步 {onlineLastSync}</span>
+                          )}
+                          {onlineError && <span className="text-xs text-[var(--warn)]">{onlineError}</span>}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button onClick={printQrCards}><Icon name="grid" className="w-4 h-4"/> 列印 QR 卡</Button>
+                          <Button onClick={publishCurrentRoundPairings} disabled={!(matchesByRound[currentRound] || []).length}>
+                            <Icon name="upload" className="w-4 h-4"/> 發佈桌次 R{currentRound}
+                          </Button>
+                          <Button onClick={closeOnlineEvent} danger><Icon name="x" className="w-4 h-4"/> 結束線上賽事</Button>
+                        </div>
+                        <div>
+                          <div className="font-semibold text-[var(--text-secondary)] mb-1.5">各桌狀態</div>
+                          {!tablesStatus ? (
+                            <div className="text-xs text-[var(--text-muted)]">讀取中…（裁判尚未掃碼前不會有上線紀錄）</div>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {tablesStatus.map(t => {
+                                const seen = t.last_seen_at ? Math.round((Date.now() - Date.parse(t.last_seen_at)) / 1000) : null;
+                                const fresh = seen !== null && seen < 30;
+                                return (
+                                  <span
+                                    key={t.table_no}
+                                    className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-xs tabular
+                                      ${t.device_change_count > 0 ? 'border-[var(--warn)] text-[var(--warn)]'
+                                        : fresh ? 'border-[var(--win)] text-[var(--win)]'
+                                        : 'border-[var(--border-default)] text-[var(--text-muted)]'}`}
+                                    title={t.last_seen_at
+                                      ? `最後上線 ${new Date(t.last_seen_at).toLocaleTimeString('zh-TW', { hour12: false })}${t.device_change_count > 0 ? `；裝置變更 ${t.device_change_count} 次（若非裁判剛到計分台重掃，請注意）` : ''}`
+                                      : '尚未掃碼上線'}
+                                  >
+                                    桌{t.table_no}
+                                    {seen === null ? '未上線' : fresh ? '在線' : `${Math.round(seen / 60)}分前`}
+                                    {t.device_change_count > 0 && <Icon name="alert" className="w-3 h-3"/>}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
