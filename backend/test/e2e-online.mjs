@@ -4,8 +4,8 @@
  * 三個 context：M=主控電腦、P1=裁判手機(iPhone)、P2=第二台裝置(Android，模擬 token 外洩)
  *
  * 前置：① cd tournament-menager && npm run build（產 dist）
- *       ② backend/ 已 npm install
- *       ③ 本檔需要 playwright（不列入 backend 相依；請 `npm i -D playwright` 或全域安裝後再跑）
+ *       ② backend/ 已 npm install（playwright 在 backend devDependencies）
+ *       ③ 首次跑需下載瀏覽器：npx playwright install chromium
  * 跑法：node backend/test/e2e-online.mjs
  */
 import { chromium, devices } from 'playwright';

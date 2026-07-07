@@ -305,11 +305,12 @@ tournament-menager/src/
    重複提交 idempotent、更正 revision、錯誤 token 401、權限分離、device_id 稽核、
    輸入竄改被拒、CORS allowlist、rate limit 429。
 
-2. **前端端到端演練**（需先 build；playwright 不在相依，需自行裝）：
+2. **前端端到端演練**（需先 build；playwright 在 backend devDependencies，
+   首次跑需 `npx playwright install chromium` 下載瀏覽器）：
    ```bash
    cd tournament-menager && npm install && npm run build
-   cd .. && npm i -D playwright
-   node backend/test/e2e-online.mjs
+   cd ../backend && npm install
+   cd .. && node backend/test/e2e-online.mjs
    ```
    主控 + 2 支模擬手機（iPhone 13 / Pixel 7），14 步全過：建立賽事→掃碼→發佈→
    裁判回報→主控自動收（標「裁判」）→更正跳 revision 警示→算分鎖定→換輪→
