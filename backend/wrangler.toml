@@ -1,0 +1,15 @@
+# WGP 線上成績回報後端 — Cloudflare Workers 設定
+# 本地開發：`npm run dev`（wrangler dev 預設本地模式，不需登入 Cloudflare）
+# 正式部署前置（由 rita 操作）：
+#   1. `wrangler login`
+#   2. `wrangler d1 create wgp_score_relay` → 把回傳的 database_id 填到下方
+#   3. `wrangler d1 execute wgp_score_relay --remote --file=./schema.sql`
+name = "wgp-score-relay"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wgp_score_relay"
+# 佔位 id：本地開發（Miniflare）不驗證；正式部署前由 rita 以 `wrangler d1 create` 取得後替換
+database_id = "00000000-0000-0000-0000-000000000000"

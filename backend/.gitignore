@@ -1,0 +1,3 @@
+# wrangler 本地狀態（含本地 D1 SQLite 檔）
+.wrangler/
+node_modules/
