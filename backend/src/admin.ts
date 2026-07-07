@@ -111,7 +111,7 @@ admin.get('/events/:id/results', requireAdmin, async (c) => {
     const eventId = c.get('eventId');
     const since = c.req.query('since') || '';
     const rows = await c.env.DB.prepare(
-        `SELECT round_no, table_no, player1_id, player2_id, result, version, submitted_at
+        `SELECT round_no, table_no, player1_id, player2_id, result, groups_json, version, submitted_at
            FROM pairings
           WHERE event_id = ? AND result IS NOT NULL AND submitted_at > ?
           ORDER BY submitted_at`

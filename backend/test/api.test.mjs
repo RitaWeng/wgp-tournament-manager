@@ -57,6 +57,10 @@ const api = (path, { method = 'GET', token, body, device } = {}) =>
         body: body ? JSON.stringify(body) : undefined,
     });
 
+// 五組（ABCDE）結果 helper：winners = [1|2 ×5]，otIdx = 加賽的組索引
+const mkGroups = (winners, otIdx = []) =>
+    winners.map((w, i) => ({ winner: w, overtime: otIdx.includes(i) }));
+
 const persist = mkdtempSync(join(tmpdir(), 'wgp-relay-test-'));
 await applySchema(persist);
 let server = startServer(persist);
@@ -103,12 +107,13 @@ try {
         assert.equal((await r.json()).published, 2);
     });
 
-    await t('裁判只看得到自己桌的對局', async () => {
+    await t('裁判只看得到自己桌的對局（未回報時 groups=null）', async () => {
         const r = await api('/judge/pairing', { token: tableTokens[0].token, device: 'device-A' });
         const j = await r.json();
         assert.equal(j.roundNo, 1);
         assert.equal(j.tableNo, 1);
         assert.equal(j.pairing.player1_name, '學校01');
+        assert.equal(j.pairing.groups, null);
         assert.equal(j.locked, false);
     });
 
@@ -117,60 +122,73 @@ try {
         assert.equal((await r.json()).pairing, null);
         const s = await api('/judge/result', {
             method: 'POST', token: tableTokens[2].token, device: 'device-C',
-            body: { roundNo: 1, winner: 1, version: 0 },
+            body: { roundNo: 1, groups: mkGroups([1, 1, 1, 1, 1]), version: 0 },
         });
         assert.equal(s.status, 404); // 越權（本桌無此對局）被拒
     });
 
-    await t('提交結果成功（桌 1：勝方 1）', async () => {
+    await t('提交五組結果成功（3:2、D 組加賽 → 伺服器推導勝方 1）', async () => {
         const r = await api('/judge/result', {
             method: 'POST', token: tableTokens[0].token, device: 'device-A',
-            body: { roundNo: 1, winner: 1, version: 0 },
+            body: { roundNo: 1, groups: mkGroups([1, 2, 1, 2, 1], [3]), version: 0 },
+        });
+        assert.equal(r.status, 200);
+        const j = await r.json();
+        assert.deepEqual([j.result, j.version, j.revision], [1, 1, false]);
+        assert.equal(j.groups[3].overtime, true);
+    });
+
+    await t('重複提交同內容 → idempotent（版本不變）', async () => {
+        const r = await api('/judge/result', {
+            method: 'POST', token: tableTokens[0].token, device: 'device-A',
+            body: { roundNo: 1, groups: mkGroups([1, 2, 1, 2, 1], [3]), version: 0 },
         });
         assert.equal(r.status, 200);
         const j = await r.json();
         assert.deepEqual([j.result, j.version, j.revision], [1, 1, false]);
     });
 
-    await t('重複提交同結果 → idempotent（版本不變）', async () => {
+    await t('更正（改 C 組 → 桌勝方翻成 2）→ revision＋版本遞增', async () => {
         const r = await api('/judge/result', {
             method: 'POST', token: tableTokens[0].token, device: 'device-A',
-            body: { roundNo: 1, winner: 1, version: 0 },
-        });
-        assert.equal(r.status, 200);
-        const j = await r.json();
-        assert.deepEqual([j.result, j.version, j.revision], [1, 1, false]);
-    });
-
-    await t('更正結果 → revision 標記＋版本遞增', async () => {
-        const r = await api('/judge/result', {
-            method: 'POST', token: tableTokens[0].token, device: 'device-A',
-            body: { roundNo: 1, winner: 2, version: 1 },
+            body: { roundNo: 1, groups: mkGroups([1, 2, 2, 2, 1], [3]), version: 1 },
         });
         const j = await r.json();
         assert.deepEqual([j.result, j.version, j.revision], [2, 2, true]);
     });
 
+    await t('只改組明細（桌勝方不變：補記 A 組加賽）→ 仍為 revision、版本遞增', async () => {
+        const r = await api('/judge/result', {
+            method: 'POST', token: tableTokens[0].token, device: 'device-A',
+            body: { roundNo: 1, groups: mkGroups([1, 2, 2, 2, 1], [0, 3]), version: 2 },
+        });
+        const j = await r.json();
+        assert.deepEqual([j.result, j.version, j.revision], [2, 3, true]);
+    });
+
     await t('拿舊版本改結果 → 409 version_conflict', async () => {
         const r = await api('/judge/result', {
             method: 'POST', token: tableTokens[0].token, device: 'device-A',
-            body: { roundNo: 1, winner: 1, version: 0 },
+            body: { roundNo: 1, groups: mkGroups([1, 1, 1, 1, 1]), version: 0 },
         });
         assert.equal(r.status, 409);
     });
 
-    await t('輸入竄改被拒：winner=3、多餘欄位、version 非整數', async () => {
+    await t('輸入竄改被拒：組勝方=3、四組、group 多餘鍵、overtime 非布林、body 多餘欄位、version 非整數', async () => {
         const mk = (body) => api('/judge/result', { method: 'POST', token: tableTokens[1].token, device: 'device-B', body });
-        assert.equal((await mk({ roundNo: 1, winner: 3, version: 0 })).status, 400);
-        assert.equal((await mk({ roundNo: 1, winner: 1, version: 0, hack: true })).status, 400);
-        assert.equal((await mk({ roundNo: 1, winner: 1, version: 'x' })).status, 400);
+        assert.equal((await mk({ roundNo: 1, groups: mkGroups([3, 1, 1, 1, 1]), version: 0 })).status, 400);
+        assert.equal((await mk({ roundNo: 1, groups: mkGroups([1, 1, 1, 1]), version: 0 })).status, 400);
+        assert.equal((await mk({ roundNo: 1, groups: [{ winner: 1, overtime: false, hack: 1 }, ...mkGroups([1, 1, 1, 1])], version: 0 })).status, 400);
+        assert.equal((await mk({ roundNo: 1, groups: [{ winner: 1, overtime: 'yes' }, ...mkGroups([1, 1, 1, 1])], version: 0 })).status, 400);
+        assert.equal((await mk({ roundNo: 1, groups: mkGroups([1, 1, 1, 1, 1]), version: 0, hack: true })).status, 400);
+        assert.equal((await mk({ roundNo: 1, groups: mkGroups([1, 1, 1, 1, 1]), version: 'x' })).status, 400);
     });
 
     await t('鎖定後提交 → 409 round_locked；解鎖後恢復可交', async () => {
         await api(`/events/${eventId}/rounds/1/lock`, { method: 'POST', token: adminToken });
         const locked = await api('/judge/result', {
             method: 'POST', token: tableTokens[1].token, device: 'device-B',
-            body: { roundNo: 1, winner: 1, version: 0 },
+            body: { roundNo: 1, groups: mkGroups([1, 1, 1, 2, 2]), version: 0 },
         });
         assert.equal(locked.status, 409);
         assert.equal((await locked.json()).error, 'round_locked');
@@ -179,7 +197,7 @@ try {
         await api(`/events/${eventId}/rounds/1/unlock`, { method: 'POST', token: adminToken });
         const ok = await api('/judge/result', {
             method: 'POST', token: tableTokens[1].token, device: 'device-B',
-            body: { roundNo: 1, winner: 2, version: 0 },
+            body: { roundNo: 1, groups: mkGroups([2, 2, 1, 2, 1]), version: 0 },
         });
         assert.equal(ok.status, 200);
     });
@@ -193,12 +211,15 @@ try {
         assert.equal(r.status, 409);
     });
 
-    await t('主控端收成績：兩桌結果、revision 可辨識（version≥2）', async () => {
+    await t('主控端收成績：兩桌結果、五組明細、revision 可辨識（version≥2）', async () => {
         const r = await api(`/events/${eventId}/results`, { token: adminToken });
         const j = await r.json();
         assert.equal(j.results.length, 2);
         const t1 = j.results.find((x) => x.table_no === 1);
-        assert.deepEqual([t1.result, t1.version], [2, 2]); // 被更正過
+        assert.deepEqual([t1.result, t1.version], [2, 3]); // 更正兩次（翻勝方＋補加賽）
+        const g1 = JSON.parse(t1.groups_json);
+        assert.equal(g1.length, 5);
+        assert.deepEqual([g1[0].overtime, g1[3].overtime], [true, true]);
         const t2 = j.results.find((x) => x.table_no === 2);
         assert.deepEqual([t2.result, t2.version], [2, 1]); // 一次到位
     });

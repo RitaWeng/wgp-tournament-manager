@@ -13,12 +13,16 @@ export type SyncConfig = {
     eventName: string;
 };
 
+// 單組（ABCDE 其一）結果：winner=該組勝方側別；overtime=平手後加賽分出
+export type GroupResult = { winner: 1 | 2; overtime: boolean };
+
 export type JudgeResultRow = {
     round_no: number;
     table_no: number;
     player1_id: number;
     player2_id: number;
-    result: 1 | 2;
+    result: 1 | 2;          // 桌勝方（伺服器由五組多數決推導）
+    groups: GroupResult[] | null;  // 五組明細（由 groups_json 解析）
     version: number;
     submitted_at: string;
 };
@@ -105,7 +109,10 @@ export function unlockRoundRemote(cfg: SyncConfig, roundNo: number): Promise<any
 
 export async function fetchResults(cfg: SyncConfig): Promise<JudgeResultRow[]> {
     const r = await call(cfg.apiBase, `/events/${cfg.eventId}/results`, { token: cfg.adminToken });
-    return r.results;
+    return r.results.map((row: any) => ({
+        ...row,
+        groups: row.groups_json ? JSON.parse(row.groups_json) : null,
+    }));
 }
 
 export async function fetchTablesStatus(cfg: SyncConfig): Promise<TableStatusRow[]> {
@@ -141,7 +148,7 @@ export function judgeGetPairing(apiBase: string, token: string, deviceId: string
 
 export function judgeSubmitResult(
     apiBase: string, token: string, deviceId: string,
-    payload: { roundNo: number; winner: 1 | 2; version: number }
+    payload: { roundNo: number; groups: GroupResult[]; version: number }
 ): Promise<any> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);

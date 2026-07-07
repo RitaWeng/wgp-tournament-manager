@@ -1,9 +1,10 @@
 # 線上成績回報後端 — 規劃文件
 
-> **狀態：草稿，待 rita 審閱**（2026-07-06 擬定；同日兩次修訂——
-> ① 紅隊推演：QR 由桌牌改為裁判隨身卡＋硬性裝置綁定；
-> ② 依 rita 提議簡化：QR 改由**計分台保管**、硬綁定改為**軟性裝置偵測**，見 4.1）
-> 審閱通過後，本文件即為執行規格：依「分階段執行計劃」逐 Phase 動工，每個 Phase 以其驗收條件收尾。
+> **狀態：規格已核准，Phase 0–4 實作完成，待 rita 驗收與部署**
+> （2026-07-06 擬定並兩次修訂；2026-07-07 rita 核准後 commit `1f8ce27`，同日完成 Phase 0–4 實作。）
+> 本文件即執行規格。**實作結果與驗證方式見第 8.5 節「實作紀錄」**；
+> 兩次修訂：① 紅隊推演——QR 由桌牌改為裁判隨身卡＋硬性裝置綁定；
+> ② 依 rita 提議簡化——QR 改由**計分台保管**、硬綁定改為**軟性裝置偵測**（見 4.1）。
 > 執行前請先讀最後一節「給執行者的注意事項」。
 
 ---
@@ -237,6 +238,116 @@ Judge（`Authorization: Bearer <table token>`）：
 - [ ] 收集裁判回饋，回頭迭代
 
 **總估：約 6–7 個工作天**。各 Phase 獨立驗收；Phase 2 完成後即使 Phase 3 未動工，現有系統也不受影響。
+
+---
+
+## 8.5 實作紀錄（2026-07-07）
+
+Phase 0–4 於 2026-07-07 一日內完成，開發分支 `feat/online-score-reporting`（從 `develop` 切出）。
+**尚未 push、未合併**，等 rita 驗收。Phase 5（實戰試用）尚未動工。
+
+### commit 對照（每 Phase 一個 commit，未 push）
+
+| Phase | commit | 摘要 |
+|-------|--------|------|
+| 規格核准 | `1f8ce27` | 本規劃文件進 develop |
+| 0 骨架 | `8693c9c` | `backend/`：Hono + wrangler + D1 schema |
+| 1 後端 API | `9648d29` | Admin/Judge API + 伺服器端驗證 + 21 項整合測試 |
+| 2 主控端整合 | `f95c27a` | `sync.ts` + 線上面板/發佈/輪詢/revision/QR |
+| 3 裁判手機頁 | `8bf3a0c` | `JudgePage.tsx`、`#/judge` route |
+| 4 安全演練 | `7932637` | E2E 演練腳本 + README 章節 |
+
+### 實際檔案結構
+
+```
+backend/                        # 成績中繼站（Cloudflare Workers）
+├── src/
+│   ├── index.ts                # Hono app、CORS、rate limit、/health、7 天 retention cron
+│   ├── admin.ts                # Admin API（建立/發佈/鎖定/收成績/各桌狀態/稽核/結束）
+│   ├── judge.ts                # Judge API（看自己桌/提交結果）
+│   ├── auth.ts                 # token 雜湊、admin/judge 中介層、軟性裝置偵測
+│   ├── ratelimit.ts            # 每 IP / 每 token 固定視窗限流
+│   └── audit.ts                # append-only 稽核 INSERT
+├── schema.sql                  # D1 五張表
+├── wrangler.toml               # D1 binding、CORS vars、retention cron
+├── test/
+│   ├── api.test.mjs            # 後端整合測試（21 項）
+│   └── e2e-online.mjs          # 前端端到端演練（Playwright，14 步）
+└── README.md
+
+tournament-menager/src/
+├── lib/sync.ts                 # 主控端↔後端所有 HTTP（不碰 swissPairing.js）
+├── JudgePage.tsx               # 裁判手機頁
+├── qrcode.d.ts                 # qrcode 套件型別宣告
+├── index.tsx                   # 加 #/judge hash route 分流
+└── TournamentManager.tsx       # 加線上面板、發佈、輪詢、revision 確認、QR 列印
+```
+
+### 與原規劃的差異（都在原精神內，實作時的細節決定）
+
+- **schema**：`tables` 表加 `device_change_count` 欄，讓主控端「各桌狀態」直接顯示裝置變更次數（原規劃只說「入稽核並標示」，這欄是實作它的方式）。
+- **API 微調**：
+  - 新增 `GET /events/:id/audit`（原規劃 4.3 說「主控端可查異動紀錄」但第 7 節未列端點，補上）。
+  - `lock`/`unlock` 以單一路由 `/rounds/:n/:op{lock|unlock}` 實作（等價）。
+  - `POST /judge/result` 的 body 是 `{ roundNo, winner, version }`（原規劃寫 `matchId`；改以「桌次由 token 決定 + roundNo」定位，裁判端不需知道 matchId，越權從結構上更不可能）。
+  - `GET /results` 目前回全部已回報配對（規模小），`?since=` 參數已支援增量但主控端採全量冪等合併。
+- **裁判頁隊名帶籤號**：沿用既有 `getPlayerName`，顯示「1. 隊伍1」。對裁判對照桌牌方便，若要純隊名可改。
+
+### 驗證方式（可重跑）
+
+1. **後端整合測試**（不需 Cloudflare 帳號、不需前端）：
+   ```bash
+   cd backend && npm install && npm test
+   ```
+   spawn 真實 `wrangler dev` + 本地 D1 打 HTTP，21 項全過：越權被拒、鎖定拒收、
+   重複提交 idempotent、更正 revision、錯誤 token 401、權限分離、device_id 稽核、
+   輸入竄改被拒、CORS allowlist、rate limit 429。
+
+2. **前端端到端演練**（需先 build；playwright 不在相依，需自行裝）：
+   ```bash
+   cd tournament-menager && npm install && npm run build
+   cd .. && npm i -D playwright
+   node backend/test/e2e-online.mjs
+   ```
+   主控 + 2 支模擬手機（iPhone 13 / Pixel 7），14 步全過：建立賽事→掃碼→發佈→
+   裁判回報→主控自動收（標「裁判」）→更正跳 revision 警示→算分鎖定→換輪→
+   斷網恢復→**後端掛掉退回手動登錄照常**→token 外洩 device 標示→結束賽事憑證失效。
+
+3. **回歸測試**（確認演算法零影響）：`cd tournament-menager && npm run test:regression` 全過；`swissPairing.js` 未動。
+
+### 8.6 擴充：五組（ABCDE）對戰結果回報（2026-07-07 追加）
+
+每桌的桌勝負實際由同桌五組（ABCDE）對戰結果決定（多數決），原始規劃只設計了裁判直接回報「桌勝方」。
+應 rita 要求追加：裁判改為逐組回報 ABCDE 五組勝負，桌勝方由**伺服器**依多數決推導（不信任前端）；
+單組平手需加賽分出，加賽結果需標記可辨識。
+
+**資料結構**：`pairings` 表加 `groups_json`（五組 `[{winner:1|2, overtime:bool}]` 的 JSON），`result` 欄位語意不變（伺服器推導的桌勝方，非裁判直填）。
+
+**API 變更**：`POST /judge/result` body 由 `{roundNo, winner, version}` 改為 `{roundNo, groups, version}`；伺服器驗證 groups 恰為 5 筆、每筆 `winner∈{1,2}` 且 `overtime` 為布林，推導 `wins1>=3 ? 1 : 2` 存回 `result`。`GET /events/:id/results` 回傳多帶 `groups_json`。
+
+**裁判頁**：五組逐組點選勝方＋「加賽」切換鈕，未選滿擋送出，即時顯示自動判定的桌勝方比數（如「3:2 → 隊伍1 勝」）；確認/完成/鎖定畫面均附五組摘要。更正時以既有五組預填方便微調（如只補記加賽）。
+
+**主控端**：桌卡新增五組比數 chip（hover 看各組明細），含加賽時標「·含加賽」；revision 確認對話框附五組比數方便操作者判斷；**桌勝方不變但組明細有更新（如補記加賽）時靜默套用、不跳警示**（伺服器稽核已留痕，不需每次都要操作者確認，否則裁判補記小地方也會一直跳窗）。
+
+**Excel 匯出**：三處桌次表匯出（單輪／全部／選手成績內嵌桌次）都加 `A組`～`E組`（黑/白）+ `組數(黑:白)` 六欄；手動登錄（無裁判回報）或輪空桌該六欄留空。
+
+**驗證**：後端整合測試由 21→22 項（新增「只改組明細、桌勝方不變」情境）；E2E 演練由 14→17 步（新增五組輸入完整流程、只改組明細靜默更新、Excel 五組欄下載驗證），全過。
+
+### 已知事項 / 小 caveat
+
+- **rate limit 是 per-isolate 記憶體**（原規劃 4.2 已預期）：Cloudflare 免費方案多 isolate 下是 best-effort，擋暴力猜 token 夠用；嚴格分散式計數需 Durable Objects，屬過度設計，未做。
+- **`min-h-24`**：裁判頁用了非 Tailwind 3.3 內建的 class 名（靠 `min-h` fallback，視覺 OK 但非標準），可日後清理。
+
+### 待 rita 操作（部署時才需要，一次性）
+
+```bash
+cd backend
+wrangler login
+wrangler d1 create wgp_score_relay          # 把回傳的 database_id 填進 wrangler.toml
+wrangler d1 execute wgp_score_relay --remote --file=./schema.sql
+npm run deploy                               # 得到 https://wgp-score-relay.<帳號>.workers.dev
+```
+部署後把該網址填進主控端「線上回報」面板建立賽事。`ALLOWED_ORIGINS` 已含 GitHub Pages 正式來源。
 
 ---
 

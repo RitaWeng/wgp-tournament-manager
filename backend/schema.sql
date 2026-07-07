@@ -34,8 +34,11 @@ CREATE TABLE IF NOT EXISTS rounds (
     PRIMARY KEY (event_id, round_no)
 );
 
--- 本輪配對與裁判回報：result 1/2 = 勝方（NULL = 未回報）；
--- version 供 optimistic versioning（重複提交 idempotent）
+-- 本輪配對與裁判回報：
+--   groups_json：五組（ABCDE）各組結果 [{"winner":1|2,"overtime":bool}×5]，
+--                裁判只回報這個；桌勝方由伺服器以多數決推導（不信任前端）
+--   result     ：1/2 = 桌勝方（由 groups 推導；NULL = 未回報）
+--   version    ：optimistic versioning（重複提交 idempotent）
 -- 輪空（BYE）不發佈進此表，由主控端照現行邏輯處理
 CREATE TABLE IF NOT EXISTS pairings (
     event_id TEXT NOT NULL REFERENCES events(id),
@@ -46,6 +49,7 @@ CREATE TABLE IF NOT EXISTS pairings (
     player2_id INTEGER NOT NULL,
     player2_name TEXT NOT NULL,
     result INTEGER CHECK (result IN (1, 2)),
+    groups_json TEXT,
     version INTEGER NOT NULL DEFAULT 0,
     submitted_at TEXT,
     PRIMARY KEY (event_id, round_no, table_no)

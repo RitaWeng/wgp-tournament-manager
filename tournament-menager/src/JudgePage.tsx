@@ -1,9 +1,11 @@
-// 裁判手機頁（#/judge；規格：docs/online-score-reporting-plan.md Phase 3）
-// 設計目標：裁判 10 秒內完成一筆——顯示自己桌的對局、點大按鈕選勝方、確認、完成。
+// 裁判手機頁（#/judge；規格：docs/online-score-reporting-plan.md Phase 3 + 五組回報擴充）
+// GiveMe5 賽制：每桌五組（ABCDE）對戰，桌勝負由五組結果多數決自動判定。
+// 裁判逐組點選勝方（單組平手經加賽分出者標「加賽」）→ 確認 → 送出；
+// 桌勝方由畫面即時推導顯示，伺服器端會再推導一次（不信任前端）。
 // token 由計分台 QR 掃入：#/judge?e=<eventId>&t=<tableToken>&a=<apiBase>
 // 載入即收進 localStorage 並以 history.replaceState 清掉網址（不留瀏覽歷史；規劃 4.1）
 import React, { useState, useEffect, useRef } from 'react';
-import { judgeGetPairing, judgeSubmitResult } from './lib/sync';
+import { judgeGetPairing, judgeSubmitResult, GroupResult } from './lib/sync';
 
 type JudgeConfig = { apiBase: string; eventId: string; token: string };
 
@@ -15,12 +17,13 @@ type PairingView = {
     pairing: {
         player1_id: number; player1_name: string;
         player2_id: number; player2_name: string;
-        result: 1 | 2 | null; version: number;
+        result: 1 | 2 | null; groups: GroupResult[] | null; version: number;
     } | null;
 };
 
 const CFG_KEY = 'wgpJudgeConfig';
 const DEVICE_KEY = 'wgpJudgeDeviceId';
+const GROUP_LABELS = ['A', 'B', 'C', 'D', 'E'] as const;
 
 // 首次啟動自產隨機 device_id（軟性裝置偵測用；授權仍以 token 為準）
 function getDeviceId(): string {
@@ -60,11 +63,15 @@ const JudgePage = () => {
     const [view, setView] = useState<PairingView | null>(null);
     const [offline, setOffline] = useState(false);
     const [unauthorized, setUnauthorized] = useState(false);
-    // 送出流程：pick（選勝方）→ confirm（確認）→ sending → done（成功畫面）
-    const [confirmWinner, setConfirmWinner] = useState<1 | 2 | null>(null);
+    // 五組草稿：winners[i]=該組勝方（null=未選）、overtimes[i]=該組經加賽
+    const [winners, setWinners] = useState<(1 | 2 | null)[]>([null, null, null, null, null]);
+    const [overtimes, setOvertimes] = useState<boolean[]>([false, false, false, false, false]);
+    const [editing, setEditing] = useState(false);       // 已有結果時是否進入更正模式
+    const [confirming, setConfirming] = useState(false); // 送出前確認畫面
     const [sending, setSending] = useState(false);
-    const [justSubmitted, setJustSubmitted] = useState<1 | 2 | null>(null);
+    const [justSubmitted, setJustSubmitted] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
+    const lastRound = useRef<number | null>(null);
 
     // 輪詢自己桌的對局（4 秒）；斷線不清畫面、亮重試橫幅
     useEffect(() => {
@@ -88,27 +95,58 @@ const JudgePage = () => {
         return () => { cancelled = true; clearInterval(id); };
     }, [cfg]);
 
-    const submit = async (winner: 1 | 2) => {
-        if (!cfg || !view?.roundNo || !view.pairing) return;
+    // 換輪（主控端發佈新桌次）時重置草稿與畫面狀態
+    useEffect(() => {
+        const r = view?.roundNo ?? null;
+        if (r !== lastRound.current) {
+            lastRound.current = r;
+            setWinners([null, null, null, null, null]);
+            setOvertimes([false, false, false, false, false]);
+            setEditing(false);
+            setConfirming(false);
+            setJustSubmitted(false);
+            setSubmitError(null);
+        }
+    }, [view?.roundNo]);
+
+    const chosenAll = winners.every(w => w !== null);
+    const wins1 = winners.filter(w => w === 1).length;
+    const derived: 1 | 2 | null = chosenAll ? (wins1 >= 3 ? 1 : 2) : null;
+
+    const startEditing = () => {
+        // 更正：以已回報的五組結果預填
+        const g = view?.pairing?.groups;
+        setWinners(g ? g.map(x => x.winner) : [null, null, null, null, null]);
+        setOvertimes(g ? g.map(x => x.overtime) : [false, false, false, false, false]);
+        setEditing(true);
+        setJustSubmitted(false);
+        setSubmitError(null);
+    };
+
+    const submit = async () => {
+        if (!cfg || !view?.roundNo || !view.pairing || !chosenAll) return;
+        const groups: GroupResult[] = winners.map((w, i) => ({ winner: w as 1 | 2, overtime: overtimes[i] }));
         setSending(true);
         setSubmitError(null);
         try {
             const r = await judgeSubmitResult(cfg.apiBase, cfg.token, deviceId.current, {
-                roundNo: view.roundNo, winner, version: view.pairing.version,
+                roundNo: view.roundNo, groups, version: view.pairing.version,
             });
             setView(v => v && v.pairing ? {
                 ...v,
-                pairing: { ...v.pairing, result: r.result, version: r.version },
+                pairing: { ...v.pairing, result: r.result, groups: r.groups, version: r.version },
             } : v);
-            setJustSubmitted(winner);
-            setConfirmWinner(null);
+            setConfirming(false);
+            setEditing(false);
+            setJustSubmitted(true);
         } catch (e: any) {
             if (e.message === 'round_locked') {
                 setView(v => (v ? { ...v, locked: true } : v));
-                setConfirmWinner(null);
+                setConfirming(false);
             } else if (e.message === 'version_conflict') {
                 setSubmitError('結果剛剛在別處更新過，畫面已重新整理，請再確認一次');
-                setConfirmWinner(null);
+                setConfirming(false);
+                setEditing(false);
             } else {
                 setSubmitError('送出失敗（網路不穩？），請再試一次');
             }
@@ -117,7 +155,7 @@ const JudgePage = () => {
         }
     };
 
-    // ── 版面：行動裝置優先、大字體大按鈕，沿用主題 token ──
+    // ── 版面：行動裝置優先、大按鈕，沿用主題 token ──
 
     const Shell = ({ children }: { children: React.ReactNode }) => (
         <div className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)] flex flex-col">
@@ -135,7 +173,7 @@ const JudgePage = () => {
                     連線中斷，自動重試中…（成績不會遺失，恢復連線後照常送出）
                 </div>
             )}
-            <div className="flex-1 flex flex-col justify-center px-5 py-6 max-w-md w-full mx-auto">
+            <div className="flex-1 flex flex-col justify-center px-4 py-5 max-w-md w-full mx-auto">
                 {children}
             </div>
         </div>
@@ -168,44 +206,66 @@ const JudgePage = () => {
     const p = view.pairing;
     const nameOf = (w: 1 | 2) => (w === 1 ? p.player1_name : p.player2_name);
 
+    // 五組結果摘要（確認/完成/鎖定畫面共用）
+    const GroupSummary = ({ groups }: { groups: GroupResult[] }) => (
+        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] divide-y divide-[var(--border-subtle)]">
+            {groups.map((g, i) => (
+                <div key={i} className="flex items-center gap-2 px-3 py-2 text-sm">
+                    <span className="font-mono-num font-bold w-5 text-[var(--text-muted)]">{GROUP_LABELS[i]}</span>
+                    <span className="flex-1 truncate font-medium">{nameOf(g.winner)} 勝</span>
+                    {g.overtime && <span className="text-[11px] px-1.5 py-0.5 rounded bg-[var(--warn-soft)] text-[var(--warn)] flex-shrink-0">加賽</span>}
+                </div>
+            ))}
+        </div>
+    );
+
     if (view.locked) {
-        return <Shell><BigMsg icon="🔒" title={`第 ${view.roundNo} 輪已鎖定`}
-            sub={<>{p.result ? <>已登錄：<b>{nameOf(p.result)}</b> 勝。<br /></> : null}
-                如需更正結果，請洽計分台（主控端解除鎖定後才能修改）。</>} /></Shell>;
+        return <Shell>
+            <div className="space-y-5">
+                <BigMsg icon="🔒" title={`第 ${view.roundNo} 輪已鎖定`}
+                    sub={<>{p.result ? <>已登錄：<b>{nameOf(p.result)}</b> 勝。<br /></> : null}
+                        如需更正結果，請洽計分台（主控端解除鎖定後才能修改）。</>} />
+                {p.groups && <GroupSummary groups={p.groups} />}
+            </div>
+        </Shell>;
     }
 
-    // 確認畫面（送出前確認；規劃 Phase 3）
-    if (confirmWinner) {
+    // 確認畫面（送出前確認）
+    if (confirming && derived) {
+        const draftGroups: GroupResult[] = winners.map((w, i) => ({ winner: w as 1 | 2, overtime: overtimes[i] }));
         return (
             <Shell>
-                <div className="space-y-6">
-                    <BigMsg icon="❓" title={`確認：${nameOf(confirmWinner)} 獲勝？`}
-                        sub={`第 ${view.roundNo} 輪 · 桌 ${view.tableNo}`} />
+                <div className="space-y-5">
+                    <BigMsg icon="❓" title={`確認：${nameOf(derived)} 獲勝？`}
+                        sub={`五組 ${derived === 1 ? wins1 : 5 - wins1}:${derived === 1 ? 5 - wins1 : wins1} · 桌勝方依五組結果自動判定`} />
+                    <GroupSummary groups={draftGroups} />
                     {submitError && <div className="text-center text-sm text-[var(--loss)]">{submitError}</div>}
                     <button
-                        onClick={() => submit(confirmWinner)}
+                        onClick={submit}
                         disabled={sending}
                         className="btn-primary w-full h-16 rounded-xl text-xl font-bold"
                     >{sending ? '送出中…' : '確定送出'}</button>
                     <button
-                        onClick={() => { setConfirmWinner(null); setSubmitError(null); }}
+                        onClick={() => { setConfirming(false); setSubmitError(null); }}
                         disabled={sending}
                         className="btn-ghost w-full h-12 rounded-xl text-base"
-                    >返回</button>
+                    >返回修改</button>
                 </div>
             </Shell>
         );
     }
 
-    // 成功畫面：送出後顯示；鎖定前可自行更正（更正會在主控端跳 revision 警示）
-    if (p.result && justSubmitted) {
+    // 已回報且非更正模式 → 現況摘要畫面（送出成功後也停在這）
+    if (p.result && !editing) {
         return (
             <Shell>
-                <div className="space-y-6">
-                    <BigMsg icon="✅" title="已送出" sub={<><b className="text-[var(--text-primary)]">{nameOf(p.result)}</b> 獲勝
-                        <br /><span className="text-sm">主控端已收到，本頁會隨輪次自動更新</span></>} />
+                <div className="space-y-5">
+                    <BigMsg icon={justSubmitted ? '✅' : '📋'} title={justSubmitted ? '已送出' : '本桌已回報'}
+                        sub={<><b className="text-[var(--text-primary)]">{nameOf(p.result)}</b> 獲勝
+                            <br /><span className="text-sm">主控端已收到，本頁會隨輪次自動更新</span></>} />
+                    {p.groups && <GroupSummary groups={p.groups} />}
                     <button
-                        onClick={() => setJustSubmitted(null)}
+                        onClick={startEditing}
                         className="btn-ghost w-full h-12 rounded-xl text-base"
                     >更正結果</button>
                 </div>
@@ -213,32 +273,60 @@ const JudgePage = () => {
         );
     }
 
-    // 選勝方（主畫面）：已有結果時顯示現況並可更正
+    // 主畫面：逐組點選勝方＋加賽註記，五組齊後可送出（桌勝方即時推導顯示）
     return (
         <Shell>
-            <div className="space-y-4">
-                <div className="text-center text-base text-[var(--text-muted)]">
-                    {p.result
-                        ? <>目前登錄：<b className="text-[var(--text-primary)]">{nameOf(p.result)}</b> 勝——如需更正請重新點選勝方</>
-                        : '請點選獲勝隊伍'}
+            <div className="space-y-3">
+                <div className="text-center text-sm text-[var(--text-muted)]">
+                    請逐組點選獲勝隊伍{editing ? '（更正中）' : ''} · 該組若加賽才分出勝負，請點「加賽」
                 </div>
                 {submitError && <div className="text-center text-sm text-[var(--loss)]">{submitError}</div>}
-                {([1, 2] as const).map(w => (
-                    <button
-                        key={w}
-                        onClick={() => setConfirmWinner(w)}
-                        className={`w-full min-h-24 rounded-2xl border-2 px-4 py-5 text-center transition-colors
-                            ${p.result === w
-                                ? 'border-[var(--win)] bg-[var(--win-soft)]'
-                                : 'border-[var(--border-default)] bg-[var(--bg-surface)] active:bg-[var(--bg-hover)]'}`}
-                    >
-                        <div className="text-2xl font-extrabold leading-snug break-words">{nameOf(w)}</div>
-                        <div className={`text-sm mt-1 ${p.result === w ? 'text-[var(--win)] font-semibold' : 'text-[var(--text-muted)]'}`}>
-                            {p.result === w ? '✓ 目前登錄為勝方' : '點我登錄獲勝'}
+                <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-surface)] divide-y divide-[var(--border-subtle)] overflow-hidden">
+                    {GROUP_LABELS.map((label, i) => (
+                        <div key={label} className="px-2.5 py-2">
+                            <div className="flex items-center gap-2">
+                                <span className="font-mono-num text-lg font-extrabold w-6 text-center text-[var(--text-muted)]">{label}</span>
+                                {([1, 2] as const).map(w => (
+                                    <button
+                                        key={w}
+                                        onClick={() => setWinners(prev => prev.map((v, j) => (j === i ? w : v)))}
+                                        className={`flex-1 min-w-0 h-12 rounded-lg border-2 px-2 text-sm font-bold truncate transition-colors
+                                            ${winners[i] === w
+                                                ? 'border-[var(--win)] bg-[var(--win-soft)] text-[var(--win)]'
+                                                : 'border-[var(--border-default)] active:bg-[var(--bg-hover)]'}`}
+                                        title={nameOf(w)}
+                                    >{nameOf(w)}</button>
+                                ))}
+                                <button
+                                    onClick={() => setOvertimes(prev => prev.map((v, j) => (j === i ? !v : v)))}
+                                    className={`h-12 px-2 rounded-lg border text-[11px] leading-tight flex-shrink-0 transition-colors
+                                        ${overtimes[i]
+                                            ? 'border-[var(--warn)] bg-[var(--warn-soft)] text-[var(--warn)] font-bold'
+                                            : 'border-[var(--border-default)] text-[var(--text-muted)]'}`}
+                                    title="此組平手後經加賽分出勝負"
+                                >加賽</button>
+                            </div>
                         </div>
-                    </button>
-                ))}
-                <div className="text-center text-xs text-[var(--text-muted)] pt-2">
+                    ))}
+                </div>
+                <div className={`text-center text-base rounded-xl px-3 py-2.5 font-semibold
+                    ${derived ? 'bg-[var(--win-soft)] text-[var(--win)]' : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'}`}>
+                    {derived
+                        ? <>五組 {derived === 1 ? wins1 : 5 - wins1}:{derived === 1 ? 5 - wins1 : wins1} → <b>{nameOf(derived)}</b> 勝（自動判定）</>
+                        : `已選 ${winners.filter(w => w !== null).length} / 5 組`}
+                </div>
+                <button
+                    onClick={() => setConfirming(true)}
+                    disabled={!chosenAll}
+                    className={`w-full h-14 rounded-xl text-lg font-bold ${chosenAll ? 'btn-primary' : 'btn-ghost opacity-50'}`}
+                >{chosenAll ? '送出結果' : '五組都選完才能送出'}</button>
+                {editing && (
+                    <button
+                        onClick={() => { setEditing(false); setSubmitError(null); }}
+                        className="btn-ghost w-full h-11 rounded-xl text-base"
+                    >取消更正</button>
+                )}
+                <div className="text-center text-xs text-[var(--text-muted)]">
                     送出前會再跳確認 · 本輪鎖定前皆可更正
                 </div>
             </div>

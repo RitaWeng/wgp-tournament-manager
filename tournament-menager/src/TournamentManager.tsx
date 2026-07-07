@@ -1300,6 +1300,17 @@ const handleToggleWithdraw = async (playerNumber) => {
     setPlayers(playersWithAuxScores);
   };
 
+  // 桌次表匯出的五組（ABCDE）欄位：各組勝方以黑/白表示（對照同列的黑方/白方欄），
+  // 加賽組附註「(加賽)」；末欄組數為 黑:白。輪空或無裁判回報（手動登錄）時留空。
+  const GROUP_EXPORT_HEADERS = ['A組', 'B組', 'C組', 'D組', 'E組', '組數(黑:白)'];
+  const groupExportCells = (match) => {
+    if (!match.groups || match.player2 === 0) return ['', '', '', '', '', ''];
+    const sideIsBlack = (w) => (w === 1) === !!match.player1IsBlack;
+    const cells = match.groups.map(g => `${sideIsBlack(g.winner) ? '黑' : '白'}${g.overtime ? '(加賽)' : ''}`);
+    const blackWins = match.groups.filter(g => sideIsBlack(g.winner)).length;
+    return [...cells, `${blackWins}:${5 - blackWins}`];
+  };
+
   // 將選手成績下載為Excel格式
   const exportPlayersToExcel = () => {
     // 根據顯示排序獲取選手清單
@@ -1357,7 +1368,7 @@ const handleToggleWithdraw = async (playerNumber) => {
       
       if (matchesToExport.length > 0) {
         // 建立標題行
-        tableData = [['桌號', '黑方', '白方', '勝方']];
+        tableData = [['桌號', '黑方', '白方', '勝方', ...GROUP_EXPORT_HEADERS]];
         
         // 添加每桌的比賽資訊
         matchesToExport.forEach(match => {
@@ -1374,7 +1385,7 @@ const handleToggleWithdraw = async (playerNumber) => {
             winner = getPlayerName(match.player2);
           }
           
-          tableData.push([match.table, blackPlayer, whitePlayer, winner]);
+          tableData.push([match.table, blackPlayer, whitePlayer, winner, ...groupExportCells(match)]);
         });
         
         // 添加該輪次桌次表分頁
@@ -1409,7 +1420,7 @@ const handleToggleWithdraw = async (playerNumber) => {
     const tableData = [];
     
     // 建立標題行
-    tableData.push(['桌號', '黑方', '白方', '勝方']);
+    tableData.push(['桌號', '黑方', '白方', '勝方', ...GROUP_EXPORT_HEADERS]);
     
     // 添加每桌的比賽資訊
     matchesToExport.forEach(match => {
@@ -1426,7 +1437,7 @@ const handleToggleWithdraw = async (playerNumber) => {
         winner = getPlayerName(match.player2);
       }
       
-      tableData.push([match.table, blackPlayer, whitePlayer, winner]);
+      tableData.push([match.table, blackPlayer, whitePlayer, winner, ...groupExportCells(match)]);
     });
     
     // 下載Excel檔案
@@ -1839,7 +1850,7 @@ const handleFileUpload = (event) => {
     const sheets = [];
     
     // 準備全部輪次合併的數據
-    const allMatchesData = [['輪次', '桌號', '黑方', '白方', '勝方']];
+    const allMatchesData = [['輪次', '桌號', '黑方', '白方', '勝方', ...GROUP_EXPORT_HEADERS]];
     
     // 按照輪次排序
     const sortedRounds = Object.keys(matchesByRound).map(Number).sort((a, b) => a - b);
@@ -1849,7 +1860,7 @@ const handleFileUpload = (event) => {
       const roundMatches = matchesByRound[round] || [];
       
       // 每輪的數據
-      const roundData = [['桌號', '黑方', '白方', '勝方']];
+      const roundData = [['桌號', '黑方', '白方', '勝方', ...GROUP_EXPORT_HEADERS]];
       
       roundMatches.forEach(match => {
         const blackPlayer = match.player1IsBlack ? getPlayerName(match.player1) : (match.player2 === 0 ? '輪空' : getPlayerName(match.player2));
@@ -1866,10 +1877,10 @@ const handleFileUpload = (event) => {
         }
         
         // 添加到各輪數據
-        roundData.push([match.table, blackPlayer, whitePlayer, winner]);
+        roundData.push([match.table, blackPlayer, whitePlayer, winner, ...groupExportCells(match)]);
         
         // 添加到全部輪次數據
-        allMatchesData.push([round, match.table, blackPlayer, whitePlayer, winner]);
+        allMatchesData.push([round, match.table, blackPlayer, whitePlayer, winner, ...groupExportCells(match)]);
       });
       
       // 添加該輪數據為一個分頁
@@ -2042,8 +2053,9 @@ const handleFileUpload = (event) => {
   // 正在跳確認視窗的桌次，避免同一筆更正重複開窗
   const revisionPromptOpen = useRef<Set<string>>(new Set());
 
-  // 批次套用裁判回報（functional update：同一次輪詢多筆結果不互相蓋寫）
-  const applyJudgeWins = (wins: { roundNo: number; tableNo: number; winnerNumber: number }[]) => {
+  // 批次套用裁判回報（functional update：同一次輪詢多筆結果不互相蓋寫）。
+  // groups = 五組（ABCDE）明細，一併存進 match 供桌次表 Excel 匯出
+  const applyJudgeWins = (wins: { roundNo: number; tableNo: number; winnerNumber: number; groups: onlineSync.GroupResult[] | null }[]) => {
     if (!wins.length) return;
     setMatchesByRound(prev => {
       const next = { ...prev };
@@ -2054,6 +2066,7 @@ const handleFileUpload = (event) => {
         const m = { ...arr[idx] };
         if (m.player2 === 0) continue; // 輪空桌不會發佈，防禦性略過
         m.player1Score = m.player1 === w.winnerNumber ? winPoint : 0;
+        if (w.groups) m.groups = w.groups;
         arr[idx] = m;
         next[w.roundNo] = arr;
       }
@@ -2069,7 +2082,7 @@ const handleFileUpload = (event) => {
   }, [judgeApplyTick]);
 
   const processJudgeResults = async (rows: onlineSync.JudgeResultRow[]) => {
-    const autoWins: { roundNo: number; tableNo: number; winnerNumber: number }[] = [];
+    const autoWins: { roundNo: number; tableNo: number; winnerNumber: number; groups: onlineSync.GroupResult[] | null }[] = [];
     const reportMarks: Record<string, { version: number; winner: number; dismissed?: boolean }> = {};
     const conflicts: { row: onlineSync.JudgeResultRow; winnerNumber: number; localWinner: number | null }[] = [];
 
@@ -2088,11 +2101,15 @@ const handleFileUpload = (event) => {
       const localWinner = localRecorded ? (match.player1Score === winPoint ? match.player1 : match.player2) : null;
 
       if (localRecorded && localWinner === winnerNumber) {
-        reportMarks[key] = { version: row.version, winner: winnerNumber }; // 結果一致，只記來源
+        // 桌勝方一致：組明細（ABCDE）有更新就靜默帶入——不影響排名，不跳警示；
+        // 稽核在伺服器端已留 revision 紀錄
+        const groupsChanged = JSON.stringify(match.groups ?? null) !== JSON.stringify(row.groups ?? null);
+        if (groupsChanged) autoWins.push({ roundNo: row.round_no, tableNo: row.table_no, winnerNumber, groups: row.groups });
+        reportMarks[key] = { version: row.version, winner: winnerNumber };
       } else if (localRecorded || (known && !known.dismissed)) {
-        conflicts.push({ row, winnerNumber, localWinner });                // 更正/衝突 → 需操作者確認（4.3）
+        conflicts.push({ row, winnerNumber, localWinner });                // 桌勝方改變 → 需操作者確認（4.3）
       } else {
-        autoWins.push({ roundNo: row.round_no, tableNo: row.table_no, winnerNumber });
+        autoWins.push({ roundNo: row.round_no, tableNo: row.table_no, winnerNumber, groups: row.groups });
         reportMarks[key] = { version: row.version, winner: winnerNumber };
       }
     }
@@ -2106,9 +2123,16 @@ const handleFileUpload = (event) => {
       if (revisionPromptOpen.current.has(key)) continue;
       revisionPromptOpen.current.add(key);
       try {
+        // 附上五組比數讓操作者好判斷（如 3:2、B組加賽）
+        const wins1 = (c.row.groups || []).filter(g => g.winner === 1).length;
+        const otLabels = (c.row.groups || [])
+          .map((g, i) => (g.overtime ? 'ABCDE'[i] : null)).filter(Boolean).join('、');
+        const groupsNote = c.row.groups
+          ? `（五組 ${c.row.result === 1 ? wins1 : 5 - wins1}:${c.row.result === 1 ? 5 - wins1 : wins1}${otLabels ? `，${otLabels}組加賽` : ''}）`
+          : '';
         const ok = await dialog.confirm({
           title: '裁判回報更正',
-          message: `第 ${c.row.round_no} 輪・桌 ${c.row.table_no}：裁判回報勝方為「${getPlayerName(c.winnerNumber)}」，` +
+          message: `第 ${c.row.round_no} 輪・桌 ${c.row.table_no}：裁判回報勝方為「${getPlayerName(c.winnerNumber)}」${groupsNote}，` +
             `與目前登錄（${c.localWinner != null ? `「${getPlayerName(c.localWinner)}」勝` : '未登錄'}）不同。\n要採計裁判的回報嗎？`,
           tone: 'warn',
           danger: true,
@@ -2116,7 +2140,7 @@ const handleFileUpload = (event) => {
           cancelText: '維持現狀',
         });
         if (ok) {
-          applyJudgeWins([{ roundNo: c.row.round_no, tableNo: c.row.table_no, winnerNumber: c.winnerNumber }]);
+          applyJudgeWins([{ roundNo: c.row.round_no, tableNo: c.row.table_no, winnerNumber: c.winnerNumber, groups: c.row.groups }]);
           setJudgeReports(prev => ({ ...prev, [key]: { version: c.row.version, winner: c.winnerNumber } }));
         } else {
           setJudgeReports(prev => ({ ...prev, [key]: { version: c.row.version, winner: c.winnerNumber, dismissed: true } }));
@@ -2451,14 +2475,32 @@ const handleFileUpload = (event) => {
     // 線上模式：此桌結果採計自裁判回報時顯示來源標示
     const judgeReported = onlineCfg && recorded &&
       judgeReports[`${round}-${match.table}`] && !judgeReports[`${round}-${match.table}`].dismissed;
+    // 五組（ABCDE）明細：裁判回報帶入後顯示組數比，hover 看各組勝方與加賽註記
+    const groupsDetail: onlineSync.GroupResult[] | undefined = match.groups;
+    const gWins1 = groupsDetail ? groupsDetail.filter(x => x.winner === 1).length : 0;
+    const groupsTitle = groupsDetail
+      ? groupsDetail.map((x, i) =>
+          `${'ABCDE'[i]} 組：${getPlayerName(x.winner === 1 ? match.player1 : match.player2)} 勝${x.overtime ? '（加賽）' : ''}`
+        ).join('\n')
+      : '';
 
     return (
       <div className="elevated rounded-lg overflow-hidden relative">
-        {judgeReported && (
-          <span
-            className="absolute top-0.5 right-0.5 z-10 text-[10px] px-1.5 py-0.5 rounded bg-[var(--info-soft)] text-[var(--info)] font-medium"
-            title="此結果由裁判線上回報"
-          >裁判</span>
+        {(judgeReported || groupsDetail) && (
+          <span className="absolute top-0.5 right-0.5 z-10 flex items-center gap-1">
+            {groupsDetail && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[var(--text-secondary)] font-mono-num tabular"
+                title={groupsTitle}
+              >{gWins1}:{5 - gWins1}{groupsDetail.some(x => x.overtime) ? '·含加賽' : ''}</span>
+            )}
+            {judgeReported && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--info-soft)] text-[var(--info)] font-medium"
+                title="此結果由裁判線上回報"
+              >裁判</span>
+            )}
+          </span>
         )}
         <div className="flex items-stretch">
           {TableCell}
