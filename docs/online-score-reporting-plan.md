@@ -213,12 +213,13 @@ Judge（`Authorization: Bearer <table token>`）：
 - [x] 「算分／解除鎖定」掛上鎖定同步（fire-and-forget，失敗以非阻斷警告提示）
 - **驗收**：後端不可用時，現有全部功能行為不變；`npm run test:regression` 全過
 
-### Phase 3：裁判手機頁（~1.5 天）
-- [ ] `#/judge` route：大字體、大按鈕、送出前確認、成功畫面
-- [ ] 首次啟動自產 `device_id`；token／device_id 收進 localStorage 並以
+### Phase 3：裁判手機頁（~1.5 天）✅ 2026-07-07
+- [x] `#/judge` route（`src/JudgePage.tsx`）：大字體、大按鈕、送出前確認、成功畫面
+- [x] 首次啟動自產 `device_id`；token／device_id 收進 localStorage 並以
       `history.replaceState` 清掉網址中的 token
-- [ ] 斷線重試＋「該輪已鎖定」明確提示
-- [ ] 沿用現有主題 token（`.btn-*` / `--bg-*` / `--text-*`），RWD 比照現有行動版
+- [x] 斷線重試（橫幅＋自動恢復）＋「該輪已鎖定」明確提示（洽計分台）
+- [x] 沿用現有主題 token（`.btn-*` / `--bg-*` / `--text-*`），行動版單欄大按鈕
+      （以 Playwright iPhone 13 / Pixel 7 裝置模擬實測）
 - **驗收**：手機實測（iOS Safari + Android Chrome）完整走完一輪回報
 
 ### Phase 4：安全強化與演練（~1 天）
