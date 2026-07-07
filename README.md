@@ -193,6 +193,48 @@ npm run test:regression
 | 打包工具 | Webpack 5 |
 | Excel 讀寫 | SheetJS (xlsx) |
 | 部署 | GitHub Pages（`gh-pages`） |
+| 線上回報後端（選用） | Cloudflare Workers + Hono + D1（`backend/`） |
+
+---
+
+## 線上成績回報（選用）
+
+讓各桌裁判用手機直接回報該桌勝負，主控端即時彙整，取代「裁判舉手 → 主控手動點選」。
+**這是選用功能**：不建立線上賽事時，系統行為與純前端版本完全相同；後端臨時不可用時
+可隨時退回手動點選，比賽不中斷。完整規格（架構、安全、API、分階段計劃）見
+[`docs/online-score-reporting-plan.md`](docs/online-score-reporting-plan.md)，後端說明見
+[`backend/README.md`](backend/README.md)。
+
+### 定位
+
+- 主控端維持**唯一權威**：賽事狀態仍在主控機 localStorage、正式紀錄仍是賽後 Excel/JSON。
+- 後端只是**成績中繼站**：保管當場配對／裁判回報／輪次鎖定／稽核，賽後即刪（另有 7 天 retention）。
+  後端**完全不懂瑞士制**——不抓對、不算分、不排名；`swissPairing.js` 一行未動。
+
+### 比賽日流程
+
+1. 主控端「線上回報」面板 →「建立線上賽事」（填後端網址）→「列印 QR 卡」，**QR 卡交計分台保管**。
+2. 裁判報到時在計分台當面掃碼（token 進手機、卡收回）；面板「各桌狀態」可看誰上線了。
+3. 每輪抓對後按「發佈桌次」→ 裁判手機數秒內自動顯示本桌對局 → 裁判點勝方、確認、送出。
+4. 主控端輪詢自動收成績，桌卡標「裁判」來源；裁判更正會**醒目警示需操作者確認**才採計。
+5. 到齊後照常「算分」→ 該輪自動鎖定，裁判端顯示「已鎖定」。
+6. 賽後「結束線上賽事」→ 伺服器資料立即刪除、所有 QR 失效。
+
+### 安全重點
+
+QR 卡全程由計分台保管、當面掃碼（token 不上桌）；token 只存 SHA-256 雜湊、綁桌次；
+已鎖定輪次伺服器拒收提交；重複提交 idempotent、更正記 revision；換裝置以**軟性偵測**
+（device_id 變化入稽核＋主控端 ⚠ 標示）留痕；CORS allowlist + rate limit。詳見規劃文件第 4 節。
+
+### 後端測試
+
+```bash
+cd backend && npm install && npm test
+```
+
+`npm test` 會 spawn 真實 `wrangler dev` + 本地 D1 打 HTTP，涵蓋越權被拒、鎖定拒收、
+idempotent、錯誤 token 401、device_id 稽核、CORS、rate limit 等（21 項）。前端整合另有
+Playwright 端到端演練（主控 + 2 支模擬手機，含斷網恢復、token 外洩偵測）。
 
 ---
 

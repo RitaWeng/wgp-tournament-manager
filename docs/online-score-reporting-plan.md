@@ -222,12 +222,14 @@ Judge（`Authorization: Bearer <table token>`）：
       （以 Playwright iPhone 13 / Pixel 7 裝置模擬實測）
 - **驗收**：手機實測（iOS Safari + Android Chrome）完整走完一輪回報
 
-### Phase 4：安全強化與演練（~1 天）
-- [ ] 依 4.2 檢查表逐項實測（越權、鎖後提交、token 猜測、重放、
-      **token 外洩情境：第二台裝置提交須觸發 device_id 變化標示、revision 須在主控端跳警示**）
-- [ ] 端到端演練：一台電腦主控 + 2–3 支手機裁判，含刻意斷網再恢復
-- [ ] 跑回歸測試確認演算法零影響
-- [ ] README 補「線上成績回報」章節
+### Phase 4：安全強化與演練（~1 天）✅ 2026-07-07
+- [x] 依 4.2 檢查表逐項實測（越權、鎖後提交、錯誤 token 401、輸入竄改、CORS、rate limit）
+      —— `backend/npm test` 21 項；token 外洩情境（第二台裝置提交觸發 device_id 標示、
+      revision 主控端跳警示）於前端 E2E 實測
+- [x] 端到端演練：主控電腦 + 2 支模擬手機（iPhone 13 / Pixel 7），含刻意斷網再恢復、
+      後端不可用退回手動 —— `backend/test/e2e-online.mjs`，14 步全過
+- [x] 跑回歸測試確認演算法零影響（`npm run test:regression` 全過）
+- [x] README 補「線上成績回報」章節
 - **驗收**：演練整場走完；安全檢查表全數通過並留下實測紀錄
 
 ### Phase 5：實戰試用

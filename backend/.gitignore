@@ -1,3 +1,6 @@
 # wrangler 本地狀態（含本地 D1 SQLite 檔）
 .wrangler/
 node_modules/
+
+# 前端 E2E 演練輸出
+test/evidence-online/
