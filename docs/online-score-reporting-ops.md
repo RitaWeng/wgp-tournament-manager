@@ -17,11 +17,6 @@
 | CORS allowlist | `https://ritaweng.github.io` + localhost:8080（開發用） |
 | rate limit | 每 IP / 每 token 各 120 次/分 |
 
-**哪些是機密、哪些不是**：`database_id`、Worker 網址、Account ID 都只是識別碼，
-公開無害（本來就進公開 repo）。真正的機密是 Cloudflare 帳號密碼、`wrangler login`
-的 OAuth 憑證（存在本機使用者目錄）、以及比賽時產生的 admin/table token
-（只存在主控端 localStorage 與 QR 卡上）。
-
 ---
 
 ## 2. 2026-07-07 做了什麼（時間序）
