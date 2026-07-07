@@ -506,7 +506,9 @@ const TournamentManager = () => {
   const [tablesRowsPerCol, setTablesRowsPerCol] = useState<number>(1);
   const [tablesRowH, setTablesRowH] = useState<number>(76);
   // UI 重構：Header 是否摺疊
-  const [headerCollapsed, setHeaderCollapsed] = useState<boolean>(false);
+  // 頂部兩段獨立摺疊：設定列（賽制/隊數/輪數…）與操作區（流程提示＋按鈕列）分開收合
+  const [settingsCollapsed, setSettingsCollapsed] = useState<boolean>(false);
+  const [actionsCollapsed, setActionsCollapsed] = useState<boolean>(false);
   // UI 重構：左欄排行榜顯示模式（compact = 卡片式、detail = 詳細表格）
   const [viewMode, setViewMode] = useState<'compact' | 'detail'>('detail');
 
@@ -3242,12 +3244,20 @@ const handleFileUpload = (event) => {
                   <Icon name="info" className="w-4 h-4"/> <span className="hidden sm:inline">關於</span>
                 </button>
                 <button
-                  onClick={() => setHeaderCollapsed(!headerCollapsed)}
+                  onClick={() => setSettingsCollapsed(v => !v)}
                   className="btn-ghost px-2 sm:px-3 h-8 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap"
-                  title={headerCollapsed ? '展開設定' : '摺疊設定'}
+                  title={settingsCollapsed ? '展開設定列（賽制、隊數、輪數…）' : '摺疊設定列（賽制、隊數、輪數…）'}
                 >
-                  <Icon name={headerCollapsed ? 'chevronDown' : 'chevronUp'} className="w-3.5 h-3.5"/>
-                  <span className="hidden sm:inline">{headerCollapsed ? '展開' : '摺疊'}</span>
+                  <Icon name={settingsCollapsed ? 'chevronDown' : 'chevronUp'} className="w-3.5 h-3.5"/>
+                  <span className="hidden sm:inline">設定</span>
+                </button>
+                <button
+                  onClick={() => setActionsCollapsed(v => !v)}
+                  className="btn-ghost px-2 sm:px-3 h-8 rounded-md text-sm flex items-center gap-1.5 whitespace-nowrap"
+                  title={actionsCollapsed ? '展開操作區（流程提示與完整按鈕列）' : '摺疊操作區（保留主要按鈕的精簡列）'}
+                >
+                  <Icon name={actionsCollapsed ? 'chevronDown' : 'chevronUp'} className="w-3.5 h-3.5"/>
+                  <span className="hidden sm:inline">操作</span>
                 </button>
               </div>
             </div>
@@ -3287,21 +3297,12 @@ const handleFileUpload = (event) => {
               </div>
             )}
 
-            {/* 摺疊狀態：只顯示流程提示 + 主動作 */}
-            {headerCollapsed ? (
-              <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
-                <div className={`flex items-center gap-2 flex-1 min-w-[200px] px-3 py-2 rounded-md text-sm ${stageBg}`}>
-                  <Icon name={stage.icon} className="w-4 h-4 flex-shrink-0"/>
-                  <span className="truncate">{stage.msg}</span>
-                </div>
-                {compactActions}
-              </div>
-            ) : (
+            {/* 兩段獨立摺疊：設定列與操作區各自收合，互不影響 */}
               <div className="px-4 py-3 space-y-3">
-                {/* 設定列：手機 2 欄、桌面 12 欄 */}
+                {/* 設定列（上半部）：手機 2 欄、桌面 12 欄 */}
                 {/* 比賽一旦開始（任一輪已生成桌次或已算分），這 3 個欄位鎖為唯讀，避免追溯改寫已紀錄的勝負與分數 */}
                 {/* 例外：輪數允許「只降不升」— 上限為當前值，下限為已涵蓋資料（避免抹掉已抓對 / 已計分的輪次） */}
-                {(() => {
+                {!settingsCollapsed && (() => {
                   const lockedTitle = '比賽已開始，無法修改。如需更動，請先點「重設」清除資料。';
                   // 下限只看實際有資料的輪次（已抓對 / 已計分），不把 UI 導覽中的 currentRound 算進來
                   const roundsFloor = Math.max(1, ...existingRounds, ...scoredRounds);
@@ -3360,6 +3361,17 @@ const handleFileUpload = (event) => {
                   );
                 })()}
 
+                {/* 操作區（下半部）：摺疊時縮成「流程提示＋主動作」一列 */}
+                {actionsCollapsed ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className={`flex items-center gap-2 flex-1 min-w-[200px] px-3 py-2 rounded-md text-sm ${stageBg}`}>
+                      <Icon name={stage.icon} className="w-4 h-4 flex-shrink-0"/>
+                      <span className="truncate">{stage.msg}</span>
+                    </div>
+                    {compactActions}
+                  </div>
+                ) : (
+                  <>
                 {/* 流程提示 */}
                 <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm ${stageBg}`}>
                   <Icon name={stage.icon} className="w-4 h-4 flex-shrink-0"/>
@@ -3444,8 +3456,10 @@ const handleFileUpload = (event) => {
                     <span>重設</span>
                   </button>
                 </div>
+                  </>
+                )}
 
-                {/* 匯入/匯出區塊（沿用既有狀態） */}
+                {/* 匯入/匯出區塊（沿用既有狀態；操作區摺疊時開著的面板仍可見） */}
                 {showImportExport && (
                   <div className="p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] space-y-3 text-sm">
                     <div>
@@ -3551,7 +3565,6 @@ const handleFileUpload = (event) => {
                   </div>
                 )}
               </div>
-            )}
           </div>
         );
       })()}
