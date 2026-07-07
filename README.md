@@ -205,6 +205,10 @@ npm run test:regression
 [`docs/online-score-reporting-plan.md`](docs/online-score-reporting-plan.md)，後端說明見
 [`backend/README.md`](backend/README.md)。
 
+> **後端已於 2026-07-07 部署上線**：`https://wgp-score-relay.rita6656.workers.dev`。
+> 驗收與部署紀錄、Cloudflare 帳號資訊、每次比賽的操作、重新部署方式、免費額度預算，
+> 都在 [`docs/online-score-reporting-ops.md`](docs/online-score-reporting-ops.md)（維運手冊）。
+
 ### 定位
 
 - 主控端維持**唯一權威**：賽事狀態仍在主控機 localStorage、正式紀錄仍是賽後 Excel/JSON。
@@ -233,7 +237,7 @@ cd backend && npm install && npm test
 ```
 
 `npm test` 會 spawn 真實 `wrangler dev` + 本地 D1 打 HTTP，涵蓋越權被拒、鎖定拒收、
-idempotent、錯誤 token 401、device_id 稽核、CORS、rate limit 等（21 項）。前端整合另有
+idempotent、錯誤 token 401、device_id 稽核、CORS、rate limit 等（22 項）。前端整合另有
 Playwright 端到端演練（主控 + 2 支模擬手機，含斷網恢復、token 外洩偵測）。
 
 ---

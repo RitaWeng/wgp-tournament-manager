@@ -7,12 +7,14 @@
 name = "wgp-score-relay"
 main = "src/index.ts"
 compatibility_date = "2026-06-01"
+workers_dev = true     # 公開 *.workers.dev 網址（裁判手機與主控端都打這個）
+preview_urls = false   # 不需要版本預覽網址，少一個對外入口
 
 [[d1_databases]]
 binding = "DB"
 database_name = "wgp_score_relay"
-# 佔位 id：本地開發（Miniflare）不驗證；正式部署前由 rita 以 `wrangler d1 create` 取得後替換
-database_id = "00000000-0000-0000-0000-000000000000"
+# 2026-07-07 由 `wrangler d1 create` 建立（APAC）
+database_id = "c1defc9f-e9a1-429b-8a80-0390ef9c8aff"
 
 [vars]
 # CORS allowlist：正式 GitHub Pages ＋ 本地開發（webpack dev server / 驗收用）。
