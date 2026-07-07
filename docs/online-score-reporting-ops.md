@@ -16,6 +16,7 @@
 | retention cron | 每日 UTC 19:17（台北 03:17）自動刪 7 天前的賽事 |
 | CORS allowlist | `https://ritaweng.github.io` + localhost:8080（開發用） |
 | rate limit | 每 IP / 每 token 各 120 次/分 |
+| 建立金鑰 SETUP_KEY | wrangler secret（**不在 repo、只在 rita 腦中與主控端 localStorage**）；「建立線上賽事」時要填。忘記就 `npx wrangler secret put SETUP_KEY` 重設一個新的 |
 
 ---
 
@@ -38,6 +39,7 @@
 
 1. retention cron 的日期比較有格式不一致（ISO `T` vs SQLite 空格），會提早最多約 5 小時刪資料——無實害。
 2. `POST /events` 無認證，理論上可被灌垃圾賽事（有 rate limit 擋，風險低）。
+   —— **已於 2026-07-08 補上 SETUP_KEY 建立金鑰**（wrangler secret），此項已解決。
 3. 主控端「拒絕採計」的 revision 決定只存在記憶體，重新整理頁面後同一筆會再跳一次確認窗。
 
 ### 2.2 修正 commit `ddf3a2e`（審查中發現並修復）
@@ -122,6 +124,20 @@ database_id 已在 `wrangler.toml`，不需重建資料庫。
 ---
 
 ## 4. 剩餘待辦
+
+### 2026-07-08 已寫好待部署：SETUP_KEY 建立金鑰（防額度濫用）
+
+程式碼已完成並通過驗證（後端 24 項測試、E2E 18 步），**尚未部署**。明天上線步驟：
+
+1. 部署後端：`cd backend && npm run deploy`
+2. 設定金鑰（互動式，輸入一段自訂密語）：`cd backend && npx wrangler secret put SETUP_KEY`
+   —— 順序無所謂：金鑰沒設定前後端不驗證（行為同現在），設定後立即生效
+3. 升版（1.4.2 → 1.4.3，照 README「版本升級」的手動 commit/tag 流程）並
+   `cd tournament-menager && npm run deploy:preview`
+4. 在 preview 測：建立線上賽事**不填金鑰應失敗（401 提示）**、填正確金鑰成功；
+   金鑰會記在主控端瀏覽器，之後不用重填
+
+### 其他待辦
 
 - [ ] 前端 develop → gh-pages preview 部署（主控端需從 GitHub Pages 開，QR 卡網址才正確）
 - [ ] 真手機實測（iOS Safari + Android Chrome 各走完一輪回報）——Phase 3 驗收的最後一項

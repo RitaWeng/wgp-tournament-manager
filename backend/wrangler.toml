@@ -22,6 +22,10 @@ database_id = "c1defc9f-e9a1-429b-8a80-0390ef9c8aff"
 ALLOWED_ORIGINS = "https://ritaweng.github.io,http://localhost:8080,http://127.0.0.1:8080"
 RATE_LIMIT_PER_MIN = "120"
 
+# 建立賽事金鑰（擋垃圾賽事灌爆 D1 免費額度）：以 secret 設定、不進 repo——
+#   npx wrangler secret put SETUP_KEY   ← 輸入一段自訂密語，主控端「建立線上賽事」時要填
+# 未設定時不驗證（本地開發 wrangler dev 即此模式；測試自帶 --var 設定）
+
 # 7 天 retention 雙保險：每日清一次過期賽事（見 src/index.ts scheduled）
 [triggers]
 crons = ["17 19 * * *"]  # UTC 19:17 = 台北 03:17

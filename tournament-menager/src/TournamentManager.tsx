@@ -516,6 +516,10 @@ const TournamentManager = () => {
   const [onlineCfg, setOnlineCfg] = useState<onlineSync.SyncConfig | null>(() => onlineSync.loadSyncConfig());
   const [showOnlinePanel, setShowOnlinePanel] = useState(false);
   const [onlineApiDraft, setOnlineApiDraft] = useState('');
+  // 建立賽事金鑰（後端 SETUP_KEY）：擋垃圾賽事灌爆免費額度；輸入一次記在 localStorage
+  const [onlineKeyDraft, setOnlineKeyDraft] = useState<string>(() => {
+    try { return localStorage.getItem('wgpOnlineSetupKey') || ''; } catch { return ''; }
+  });
   const [onlineLastSync, setOnlineLastSync] = useState<string | null>(null);
   const [onlineError, setOnlineError] = useState<string | null>(null);
   const [tablesStatus, setTablesStatus] = useState<onlineSync.TableStatusRow[] | null>(null);
@@ -2200,14 +2204,18 @@ const handleFileUpload = (event) => {
       return;
     }
     const tables = Math.ceil(allPlayers / 2);
+    const setupKey = onlineKeyDraft.trim();
     try {
-      const cfg = await onlineSync.createEvent(apiBase, gameTitle, tables);
+      const cfg = await onlineSync.createEvent(apiBase, gameTitle, tables, setupKey);
       onlineSync.saveSyncConfig(cfg);
       setOnlineCfg(cfg);
       setJudgeReports({});
+      try { localStorage.setItem('wgpOnlineSetupKey', setupKey); } catch { /* 存不進去下次再輸入 */ }
       message.success(`線上賽事已建立（${tables} 桌）。請按「列印 QR 卡」交給計分台保管，裁判報到時當面掃碼。`);
     } catch (e: any) {
-      message.error(`建立線上賽事失敗：${e.message}`);
+      message.error(e.message === 'setup_key_required'
+        ? '建立金鑰錯誤或未填。請輸入部署後端時設定的建立金鑰（SETUP_KEY）。'
+        : `建立線上賽事失敗：${e.message}`);
     }
   };
 
@@ -3509,6 +3517,14 @@ const handleFileUpload = (event) => {
                             onChange={e => setOnlineApiDraft(e.target.value)}
                             placeholder="後端 API 網址（https://wgp-score-relay.….workers.dev）"
                             className="px-2 h-8 text-sm flex-1 min-w-64"
+                          />
+                          <input
+                            type="password"
+                            value={onlineKeyDraft}
+                            onChange={e => setOnlineKeyDraft(e.target.value)}
+                            placeholder="建立金鑰（SETUP_KEY）"
+                            title="部署後端時以 wrangler secret 設定的建立賽事金鑰；後端未設定時可留空"
+                            className="px-2 h-8 text-sm w-44"
                           />
                           <Button onClick={createOnlineEvent} type="primary">建立線上賽事（{Math.ceil(allPlayers / 2)} 桌）</Button>
                         </div>

@@ -12,6 +12,7 @@ export type Env = {
     DB: D1Database;
     ALLOWED_ORIGINS?: string;     // 逗號分隔 CORS allowlist
     RATE_LIMIT_PER_MIN?: string;  // 每分鐘請求上限（每 IP / 每 token 各自計）
+    SETUP_KEY?: string;           // 建立賽事金鑰（wrangler secret；未設定 = 不驗，本地開發/測試用）
 };
 
 // c.set / c.get 共用的變數型別（auth 中介層填入）
@@ -30,7 +31,7 @@ app.use('*', async (c, next) => {
     return cors({
         origin: (origin) => (allowed.includes(origin) ? origin : null),
         allowMethods: ['GET', 'POST', 'OPTIONS'],
-        allowHeaders: ['Authorization', 'Content-Type', 'X-Device-Id'],
+        allowHeaders: ['Authorization', 'Content-Type', 'X-Device-Id', 'X-Setup-Key'],
         maxAge: 600,
     })(c, next);
 });

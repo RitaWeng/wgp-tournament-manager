@@ -7,8 +7,16 @@ import { auditStmt } from './audit';
 
 export const admin = new Hono<AppEnv>();
 
-// 建立賽事：回傳 admin token 與各桌 table token（僅此一次明文回傳，之後只存雜湊）
+// 建立賽事：回傳 admin token 與各桌 table token（僅此一次明文回傳，之後只存雜湊）。
+// 這是唯一不需 token 的寫入端點——正式環境以 SETUP_KEY（wrangler secret，只有主控端
+// 操作者知道）擋垃圾賽事灌爆 D1 寫入額度；未設定 SETUP_KEY 時不驗（本地開發、測試）。
 admin.post('/events', async (c) => {
+    if (c.env.SETUP_KEY) {
+        // 比對雜湊而非原文：等長比較，避免長度/前綴的 timing 差異
+        const given = await sha256Hex(c.req.header('X-Setup-Key') || '');
+        if (given !== await sha256Hex(c.env.SETUP_KEY))
+            return c.json({ error: 'setup_key_required' }, 401);
+    }
     let body: unknown;
     try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
     const { name, tables } = (body ?? {}) as { name?: unknown; tables?: unknown };

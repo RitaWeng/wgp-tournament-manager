@@ -62,13 +62,14 @@ async function applySchema(persistDir) {
 }
 
 // 帶 Origin 的 helper（模擬瀏覽器跨站呼叫）
-const api = (path, { method = 'GET', token, body, device } = {}) =>
+const api = (path, { method = 'GET', token, body, device, key } = {}) =>
     fetch(`${BASE}${path}`, {
         method,
         headers: {
             Origin: ORIGIN,
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
             ...(device ? { 'X-Device-Id': device } : {}),
+            ...(key ? { 'X-Setup-Key': key } : {}),
             ...(body ? { 'Content-Type': 'application/json' } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
@@ -78,17 +79,26 @@ const api = (path, { method = 'GET', token, body, device } = {}) =>
 const mkGroups = (winners, otIdx = []) =>
     winners.map((w, i) => ({ winner: w, overtime: otIdx.includes(i) }));
 
+const SETUP_KEY = 'test-setup-key';
 const persist = mkdtempSync(join(tmpdir(), 'wgp-relay-test-'));
 await applySchema(persist);
-let server = startServer(persist);
+let server = startServer(persist, ['--var', `SETUP_KEY:${SETUP_KEY}`]);
 
 try {
     await waitReady();
     console.log('▶ 基本功能');
 
+    await t('建立賽事需 SETUP_KEY：未帶 401、帶錯 401', async () => {
+        const noKey = await api('/events', { method: 'POST', body: { name: 'x', tables: 3 } });
+        assert.equal(noKey.status, 401);
+        assert.equal((await noKey.json()).error, 'setup_key_required');
+        const badKey = await api('/events', { method: 'POST', key: 'wrong-key', body: { name: 'x', tables: 3 } });
+        assert.equal(badKey.status, 401);
+    });
+
     let eventId, adminToken, tableTokens;
     await t('建立賽事回傳 token（僅此一次）', async () => {
-        const r = await api('/events', { method: 'POST', body: { name: '整合測試賽', tables: 3 } });
+        const r = await api('/events', { method: 'POST', key: SETUP_KEY, body: { name: '整合測試賽', tables: 3 } });
         assert.equal(r.status, 200);
         ({ eventId, adminToken, tableTokens } = await r.json());
         assert.equal(tableTokens.length, 3);
@@ -96,7 +106,7 @@ try {
     });
 
     await t('建立賽事輸入驗證（tables=0 → 400）', async () => {
-        const r = await api('/events', { method: 'POST', body: { name: 'x', tables: 0 } });
+        const r = await api('/events', { method: 'POST', key: SETUP_KEY, body: { name: 'x', tables: 0 } });
         assert.equal(r.status, 400);
     });
 

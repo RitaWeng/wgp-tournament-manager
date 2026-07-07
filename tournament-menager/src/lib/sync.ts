@@ -58,7 +58,7 @@ export function saveSyncConfig(cfg: SyncConfig | null): void {
 async function call(
     apiBase: string,
     path: string,
-    opts: { method?: string; token?: string; body?: unknown } = {}
+    opts: { method?: string; token?: string; body?: unknown; setupKey?: string } = {}
 ): Promise<any> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
@@ -68,6 +68,7 @@ async function call(
             signal: ctrl.signal,
             headers: {
                 ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
+                ...(opts.setupKey ? { 'X-Setup-Key': opts.setupKey } : {}),
                 ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
             },
             body: opts.body ? JSON.stringify(opts.body) : undefined,
@@ -82,9 +83,11 @@ async function call(
 
 // ── Admin（主控端）──────────────────────────────────────
 
-export async function createEvent(apiBase: string, name: string, tables: number): Promise<SyncConfig> {
+// setupKey = 部署時設定的建立賽事金鑰（wrangler secret SETUP_KEY）；
+// 後端未設定金鑰時可留空
+export async function createEvent(apiBase: string, name: string, tables: number, setupKey?: string): Promise<SyncConfig> {
     const base = apiBase.replace(/\/+$/, '');
-    const r = await call(base, '/events', { method: 'POST', body: { name, tables } });
+    const r = await call(base, '/events', { method: 'POST', body: { name, tables }, setupKey: setupKey || undefined });
     return { apiBase: base, eventId: r.eventId, adminToken: r.adminToken, tableTokens: r.tableTokens, eventName: name };
 }
 
