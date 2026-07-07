@@ -2144,6 +2144,12 @@ const handleFileUpload = (event) => {
           setJudgeReports(prev => ({ ...prev, [key]: { version: c.row.version, winner: c.winnerNumber } }));
         } else {
           setJudgeReports(prev => ({ ...prev, [key]: { version: c.row.version, winner: c.winnerNumber, dismissed: true } }));
+          // 記到伺服器讓裁判頁顯示「更正未被採計，請洽計分台」；
+          // 失敗只影響裁判端提示（409 = 裁判又送了新版本，下次輪詢會重新判斷），不擋主控操作
+          if (onlineCfg) {
+            onlineSync.rejectJudgeResult(onlineCfg, c.row.round_no, c.row.table_no, c.row.version)
+              .catch(() => { /* 見上：非關鍵路徑 */ });
+          }
         }
       } finally {
         revisionPromptOpen.current.delete(key);

@@ -229,13 +229,23 @@ async function judgeSubmitFlow(page) {
   await judgeSubmitFlow(P2);
   // M 端跳 revision 警示（第二台裝置翻改已登錄結果）→ 操作者「維持現狀」擋下
   const revisionDlg = M.getByRole('button', { name: '維持現狀' });
-  try { await revisionDlg.waitFor({ timeout: 8000 }); await revisionDlg.click(); } catch { /* 未跳窗也可 */ }
+  let rejectedByOperator = false;
+  try { await revisionDlg.waitFor({ timeout: 8000 }); await revisionDlg.click(); rejectedByOperator = true; } catch { /* 未跳窗也可 */ }
   // 各桌狀態應標示裝置變更（等一次狀態輪詢 10 秒）
   await wait(12000);
   const chipTitle = await M.locator('span').filter({ hasText: /^桌1/ }).first().getAttribute('title');
   const flagged = chipTitle && chipTitle.includes('裝置變更');
   step(flagged ? '✅' : '❌', 'token 外洩偵測', flagged ? '桌1 標示裝置變更 ⚠＋翻改被操作者擋下' : `title=${chipTitle}`);
   await M.screenshot({ path: path.join(OUT, '08-M-device-flag.png') });
+
+  // ── 拒絕採計通知：操作者「維持現狀」→ 裁判頁（P2）輪詢後顯示未採計橫幅 ──
+  if (rejectedByOperator) {
+    await P2.waitForSelector('text=未被計分台採計', { timeout: 25000 });
+    step('✅', '拒絕採計通知', 'P2 顯示「更正未被計分台採計，請至計分台說明」');
+    await P2.screenshot({ path: path.join(OUT, '09-P2-rejected.png') });
+  } else {
+    step('⚠️', '拒絕採計通知', '略過（revision 警示未跳窗）');
+  }
 
   // ── Excel 匯出：桌次表帶 A~E 五欄＋組數（黑:白）──
   try {

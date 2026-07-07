@@ -105,6 +105,32 @@ admin.post('/events/:id/rounds/:n/:op{lock|unlock}', requireAdmin, async (c) => 
     return c.json({ ok: true, roundNo, status });
 });
 
+// 拒絕採計（操作者對 revision 警示按「維持現狀」）：記下被拒的 version，
+// 裁判頁輪詢看到後顯示「更正未被採計，請洽計分台」。不動 result/groups——
+// 伺服器只是中繼，主控端本地的結果即為權威；帶 version 守衛避免誤拒裁判剛送的新版本
+admin.post('/events/:id/rounds/:n/tables/:t/reject', requireAdmin, async (c) => {
+    const eventId = c.get('eventId');
+    const roundNo = Number(c.req.param('n'));
+    const tableNo = Number(c.req.param('t'));
+    if (!Number.isInteger(roundNo) || roundNo < 1 || !Number.isInteger(tableNo) || tableNo < 1)
+        return c.json({ error: 'invalid_params' }, 400);
+    let body: unknown;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+    const { version } = (body ?? {}) as Record<string, unknown>;
+    if (!Number.isInteger(version) || (version as number) < 1) return c.json({ error: 'invalid_version' }, 400);
+
+    const upd = await c.env.DB.prepare(
+        `UPDATE pairings SET rejected_version = ?
+          WHERE event_id = ? AND round_no = ? AND table_no = ? AND version = ?`
+    ).bind(version, eventId, roundNo, tableNo, version).run();
+    // 版本已前進（裁判又送了更新的版本）→ 這筆拒絕作廢，主控端會再收到新版本重新判斷
+    if (!upd.meta.changes) return c.json({ error: 'version_conflict' }, 409);
+
+    await auditStmt(c.env.DB, eventId, 'admin', 'reject_result',
+        { roundNo, tableNo, version }, clientIp(c)).run();
+    return c.json({ ok: true, roundNo, tableNo, rejectedVersion: version });
+});
+
 // 收裁判回報：規模小（每輪十幾桌），直接回傳全部已回報配對，主控端冪等合併；
 // ?since=<ISO> 可做增量（比較 submitted_at）
 admin.get('/events/:id/results', requireAdmin, async (c) => {

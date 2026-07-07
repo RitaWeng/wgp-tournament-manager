@@ -120,6 +120,13 @@ export async function fetchTablesStatus(cfg: SyncConfig): Promise<TableStatusRow
     return r.tables;
 }
 
+// 操作者對 revision 警示按「維持現狀」→ 通知伺服器該版本未被採計，
+// 裁判頁輪詢看到後顯示「請洽計分台」（裁判再更正即自動解除）
+export function rejectJudgeResult(cfg: SyncConfig, roundNo: number, tableNo: number, version: number): Promise<any> {
+    return call(cfg.apiBase, `/events/${cfg.eventId}/rounds/${roundNo}/tables/${tableNo}/reject`,
+        { method: 'POST', token: cfg.adminToken, body: { version } });
+}
+
 export function closeEvent(cfg: SyncConfig): Promise<any> {
     return call(cfg.apiBase, `/events/${cfg.eventId}/close`, { method: 'POST', token: cfg.adminToken });
 }

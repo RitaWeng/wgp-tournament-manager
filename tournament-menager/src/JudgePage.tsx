@@ -18,6 +18,7 @@ type PairingView = {
         player1_id: number; player1_name: string;
         player2_id: number; player2_name: string;
         result: 1 | 2 | null; groups: GroupResult[] | null; version: number;
+        rejected: boolean;  // 目前版本被操作者「維持現狀」拒絕採計（再更正自動解除）
     } | null;
 };
 
@@ -136,7 +137,8 @@ const JudgePage = () => {
             });
             setView(v => v && v.pairing ? {
                 ...v,
-                pairing: { ...v.pairing, result: r.result, groups: r.groups, version: r.version },
+                // 新版本送出成功 → 先前的「未採計」標示即失效
+                pairing: { ...v.pairing, result: r.result, groups: r.groups, version: r.version, rejected: false },
             } : v);
             setConfirming(false);
             setEditing(false);
@@ -162,17 +164,23 @@ const JudgePage = () => {
     const Shell = ({ children }: { children: React.ReactNode }) => (
         <div className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)] flex flex-col">
             <div className="px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-                <div className="text-xs uppercase tracking-widest text-[var(--text-muted)]">裁判成績回報</div>
+                <div className="text-lg uppercase tracking-widest text-[var(--text-muted)]">裁判成績回報</div>
                 {view && (
-                    <div className="text-sm text-[var(--text-secondary)] mt-0.5 truncate">
+                    <div className="text-xl text-[var(--text-secondary)] mt-0.5 truncate">
                         {view.eventName} · <span className="font-semibold">桌 {view.tableNo}</span>
                         {view.roundNo && <> · 第 {view.roundNo} 輪</>}
                     </div>
                 )}
             </div>
             {offline && (
-                <div className="px-4 py-2 text-sm text-center bg-[var(--warn-soft)] text-[var(--warn)]">
+                <div className="px-4 py-2 text-xl text-center bg-[var(--warn-soft)] text-[var(--warn)]">
                     連線中斷，自動重試中…（成績不會遺失，恢復連線後照常送出）
+                </div>
+            )}
+            {view?.pairing?.rejected && !editing && (
+                <div className="px-4 py-3 text-center bg-[var(--loss-soft)] text-[var(--loss)]">
+                    <div className="text-2xl font-bold">⚠ 你送出的更正未被計分台採計</div>
+                    <div className="text-xl mt-1">請至計分台向工作人員說明</div>
                 </div>
             )}
             <div className="flex-1 flex flex-col justify-center px-4 py-5 max-w-md w-full mx-auto">
@@ -183,9 +191,9 @@ const JudgePage = () => {
 
     const BigMsg = ({ icon, title, sub }: { icon: string; title: string; sub?: React.ReactNode }) => (
         <div className="text-center space-y-3">
-            <div className="text-5xl">{icon}</div>
-            <div className="text-xl font-bold">{title}</div>
-            {sub && <div className="text-base text-[var(--text-muted)] leading-relaxed">{sub}</div>}
+            <div className="text-6xl">{icon}</div>
+            <div className="text-4xl font-bold">{title}</div>
+            {sub && <div className="text-2xl text-[var(--text-muted)] leading-relaxed">{sub}</div>}
         </div>
     );
 
@@ -212,10 +220,10 @@ const JudgePage = () => {
     const GroupSummary = ({ groups }: { groups: GroupResult[] }) => (
         <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] divide-y divide-[var(--border-subtle)]">
             {groups.map((g, i) => (
-                <div key={i} className="flex items-center gap-2 px-3 py-2 text-sm">
-                    <span className="font-mono-num font-bold w-5 text-[var(--text-muted)]">{GROUP_LABELS[i]}</span>
+                <div key={i} className="flex items-center gap-2 px-3 py-2 text-xl">
+                    <span className="font-mono-num font-bold w-8 text-[var(--text-muted)]">{GROUP_LABELS[i]}</span>
                     <span className="flex-1 truncate font-medium">{nameOf(g.winner)} 勝</span>
-                    {g.overtime && <span className="text-[11px] px-1.5 py-0.5 rounded bg-[var(--warn-soft)] text-[var(--warn)] flex-shrink-0">加賽</span>}
+                    {g.overtime && <span className="text-base px-2 py-0.5 rounded bg-[var(--warn-soft)] text-[var(--warn)] flex-shrink-0">加賽</span>}
                 </div>
             ))}
         </div>
@@ -241,16 +249,16 @@ const JudgePage = () => {
                     <BigMsg icon="❓" title={`確認：${nameOf(derived)} 獲勝？`}
                         sub={`五組 ${derived === 1 ? wins1 : 5 - wins1}:${derived === 1 ? 5 - wins1 : wins1} · 桌勝方依五組結果自動判定`} />
                     <GroupSummary groups={draftGroups} />
-                    {submitError && <div className="text-center text-sm text-[var(--loss)]">{submitError}</div>}
+                    {submitError && <div className="text-center text-xl text-[var(--loss)]">{submitError}</div>}
                     <button
                         onClick={submit}
                         disabled={sending}
-                        className="btn-primary w-full h-16 rounded-xl text-xl font-bold"
+                        className="btn-primary w-full h-20 rounded-xl text-3xl font-bold"
                     >{sending ? '送出中…' : '確定送出'}</button>
                     <button
                         onClick={() => { setConfirming(false); setSubmitError(null); }}
                         disabled={sending}
-                        className="btn-ghost w-full h-12 rounded-xl text-base"
+                        className="btn-ghost w-full h-14 rounded-xl text-2xl"
                     >返回修改</button>
                 </div>
             </Shell>
@@ -264,11 +272,11 @@ const JudgePage = () => {
                 <div className="space-y-5">
                     <BigMsg icon={justSubmitted ? '✅' : '📋'} title={justSubmitted ? '已送出' : '本桌已回報'}
                         sub={<><b className="text-[var(--text-primary)]">{nameOf(p.result)}</b> 獲勝
-                            <br /><span className="text-sm">主控端已收到，本頁會隨輪次自動更新</span></>} />
+                            <br /><span className="text-xl">主控端已收到，本頁會隨輪次自動更新</span></>} />
                     {p.groups && <GroupSummary groups={p.groups} />}
                     <button
                         onClick={startEditing}
-                        className="btn-ghost w-full h-12 rounded-xl text-base"
+                        className="btn-ghost w-full h-14 rounded-xl text-2xl"
                     >更正結果</button>
                 </div>
             </Shell>
@@ -279,20 +287,20 @@ const JudgePage = () => {
     return (
         <Shell>
             <div className="space-y-3">
-                <div className="text-center text-sm text-[var(--text-muted)]">
+                <div className="text-center text-xl text-[var(--text-muted)]">
                     請逐組點選獲勝隊伍{editing ? '（更正中）' : ''} · 該組若加賽才分出勝負，請點「加賽」
                 </div>
-                {submitError && <div className="text-center text-sm text-[var(--loss)]">{submitError}</div>}
+                {submitError && <div className="text-center text-xl text-[var(--loss)]">{submitError}</div>}
                 <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-surface)] divide-y divide-[var(--border-subtle)] overflow-hidden">
                     {GROUP_LABELS.map((label, i) => (
                         <div key={label} className="px-2.5 py-2">
                             <div className="flex items-center gap-2">
-                                <span className="font-mono-num text-lg font-extrabold w-6 text-center text-[var(--text-muted)]">{label}</span>
+                                <span className="font-mono-num text-3xl font-extrabold w-9 text-center text-[var(--text-muted)]">{label}</span>
                                 {([1, 2] as const).map(w => (
                                     <button
                                         key={w}
                                         onClick={() => setWinners(prev => prev.map((v, j) => (j === i ? w : v)))}
-                                        className={`flex-1 min-w-0 h-12 rounded-lg border-2 px-2 text-sm font-bold truncate transition-colors
+                                        className={`flex-1 min-w-0 h-16 rounded-lg border-2 px-2 text-xl font-bold truncate transition-colors
                                             ${winners[i] === w
                                                 ? 'border-[var(--win)] bg-[var(--win-soft)] text-[var(--win)]'
                                                 : 'border-[var(--border-default)] active:bg-[var(--bg-hover)]'}`}
@@ -301,7 +309,7 @@ const JudgePage = () => {
                                 ))}
                                 <button
                                     onClick={() => setOvertimes(prev => prev.map((v, j) => (j === i ? !v : v)))}
-                                    className={`h-12 px-2 rounded-lg border text-[11px] leading-tight flex-shrink-0 transition-colors
+                                    className={`h-16 px-2 rounded-lg border text-base leading-tight flex-shrink-0 transition-colors
                                         ${overtimes[i]
                                             ? 'border-[var(--warn)] bg-[var(--warn-soft)] text-[var(--warn)] font-bold'
                                             : 'border-[var(--border-default)] text-[var(--text-muted)]'}`}
@@ -311,7 +319,7 @@ const JudgePage = () => {
                         </div>
                     ))}
                 </div>
-                <div className={`text-center text-base rounded-xl px-3 py-2.5 font-semibold
+                <div className={`text-center text-2xl rounded-xl px-3 py-2.5 font-semibold
                     ${derived ? 'bg-[var(--win-soft)] text-[var(--win)]' : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'}`}>
                     {derived
                         ? <>五組 {derived === 1 ? wins1 : 5 - wins1}:{derived === 1 ? 5 - wins1 : wins1} → <b>{nameOf(derived)}</b> 勝（自動判定）</>
@@ -320,15 +328,15 @@ const JudgePage = () => {
                 <button
                     onClick={() => setConfirming(true)}
                     disabled={!chosenAll}
-                    className={`w-full h-14 rounded-xl text-lg font-bold ${chosenAll ? 'btn-primary' : 'btn-ghost opacity-50'}`}
+                    className={`w-full h-16 rounded-xl text-3xl font-bold ${chosenAll ? 'btn-primary' : 'btn-ghost opacity-50'}`}
                 >{chosenAll ? '送出結果' : '五組都選完才能送出'}</button>
                 {editing && (
                     <button
                         onClick={() => { setEditing(false); setSubmitError(null); }}
-                        className="btn-ghost w-full h-11 rounded-xl text-base"
+                        className="btn-ghost w-full h-14 rounded-xl text-2xl"
                     >取消更正</button>
                 )}
-                <div className="text-center text-xs text-[var(--text-muted)]">
+                <div className="text-center text-lg text-[var(--text-muted)]">
                     送出前會再跳確認 · 本輪鎖定前皆可更正
                 </div>
             </div>

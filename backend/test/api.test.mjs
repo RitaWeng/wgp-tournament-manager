@@ -241,6 +241,34 @@ try {
         assert.deepEqual([t2.result, t2.version], [2, 1]); // 一次到位
     });
 
+    await t('拒絕採計：reject 後裁判頁標示、再更正即解除、過時版本 409、權限分離', async () => {
+        // 前一個測項讓第 1 輪停在 locked，先解鎖（reject/更正都是開放輪次的情境）
+        await api(`/events/${eventId}/rounds/1/unlock`, { method: 'POST', token: adminToken });
+        // 操作者「維持現狀」→ 記下被拒版本（桌 1 目前 version=3）
+        const rj = await api(`/events/${eventId}/rounds/1/tables/1/reject`, {
+            method: 'POST', token: adminToken, body: { version: 3 },
+        });
+        assert.equal(rj.status, 200);
+        let pv = await (await api('/judge/pairing', { token: tableTokens[0].token, device: 'device-A' })).json();
+        assert.equal(pv.pairing.rejected, true);
+        // 裁判再更正（version 3→4）→ 未採計標示自動解除
+        const ok = await api('/judge/result', {
+            method: 'POST', token: tableTokens[0].token, device: 'device-A',
+            body: { roundNo: 1, groups: mkGroups([1, 2, 1, 2, 1]), version: 3 },
+        });
+        assert.equal(ok.status, 200);
+        pv = await (await api('/judge/pairing', { token: tableTokens[0].token, device: 'device-A' })).json();
+        assert.equal(pv.pairing.rejected, false);
+        // 拿已過時的版本 reject → 409（裁判已送新版本，這筆拒絕作廢）
+        assert.equal((await api(`/events/${eventId}/rounds/1/tables/1/reject`, {
+            method: 'POST', token: adminToken, body: { version: 3 },
+        })).status, 409);
+        // judge token 打 reject → 401（權限分離）
+        assert.equal((await api(`/events/${eventId}/rounds/1/tables/1/reject`, {
+            method: 'POST', token: tableTokens[0].token, body: { version: 4 },
+        })).status, 401);
+    });
+
     await t('device_id 變化：不拒絕、入稽核、狀態一覽可查', async () => {
         // 桌 1 換裝置（模擬 token 外洩或換機）
         const r = await api('/judge/pairing', { token: tableTokens[0].token, device: 'device-EVIL' });

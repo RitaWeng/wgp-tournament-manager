@@ -46,7 +46,7 @@ judge.get('/judge/pairing', async (c) => {
     const event = await c.env.DB.prepare('SELECT name FROM events WHERE id = ?')
         .bind(eventId).first<{ name: string }>();
     const p = await c.env.DB.prepare(
-        `SELECT player1_id, player1_name, player2_id, player2_name, result, groups_json, version
+        `SELECT player1_id, player1_name, player2_id, player2_name, result, groups_json, version, rejected_version
            FROM pairings WHERE event_id = ? AND round_no = ? AND table_no = ?`
     ).bind(eventId, round.round_no, tableNo).first<any>();
     return c.json({
@@ -54,7 +54,15 @@ judge.get('/judge/pairing', async (c) => {
         tableNo,
         roundNo: round.round_no,
         locked: round.status === 'locked',
-        pairing: p ? { ...p, groups: p.groups_json ? JSON.parse(p.groups_json) : null, groups_json: undefined } : null,
+        pairing: p ? {
+            ...p,
+            groups: p.groups_json ? JSON.parse(p.groups_json) : null,
+            groups_json: undefined,
+            // 目前這個版本被操作者「維持現狀」拒絕採計 → 裁判頁顯示「請洽計分台」；
+            // 裁判再更正（版本遞增）後自動解除
+            rejected: p.rejected_version !== null && p.rejected_version === p.version,
+            rejected_version: undefined,
+        } : null,
     });
 });
 

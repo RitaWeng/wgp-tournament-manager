@@ -51,6 +51,10 @@ CREATE TABLE IF NOT EXISTS pairings (
     result INTEGER CHECK (result IN (1, 2)),
     groups_json TEXT,
     version INTEGER NOT NULL DEFAULT 0,
+    -- 操作者「維持現狀」（不採計裁判更正）時記下被拒的 version；
+    -- 裁判頁看到自己目前版本被拒即顯示「請洽計分台」，再更正（版本遞增）自動解除。
+    -- 既有部署升級：ALTER TABLE pairings ADD COLUMN rejected_version INTEGER;
+    rejected_version INTEGER,
     submitted_at TEXT,
     PRIMARY KEY (event_id, round_no, table_no)
 );
