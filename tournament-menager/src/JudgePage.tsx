@@ -73,7 +73,9 @@ const JudgePage = () => {
     const [submitError, setSubmitError] = useState<string | null>(null);
     const lastRound = useRef<number | null>(null);
 
-    // 輪詢自己桌的對局（4 秒）；斷線不清畫面、亮重試橫幅
+    // 輪詢自己桌的對局（10 秒）；斷線不清畫面、亮重試橫幅。
+    // 每次輪詢伺服器都會寫一筆 last_seen（D1 免費額度 10 萬寫/日），
+    // 10 秒 × 十幾桌 × 整天 ≈ 3–4 萬寫，留足餘裕；別再調快
     useEffect(() => {
         if (!cfg) return;
         let cancelled = false;
@@ -91,7 +93,7 @@ const JudgePage = () => {
             }
         };
         tick();
-        const id = setInterval(tick, 4000);
+        const id = setInterval(tick, 10000);
         return () => { cancelled = true; clearInterval(id); };
     }, [cfg]);
 

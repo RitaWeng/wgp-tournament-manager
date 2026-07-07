@@ -6,7 +6,14 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+
+// Windows 相容：spawn 'npx' 在 Windows 找不到執行檔（ENOENT），且經 shell 會讓
+// kill 只殺到外殼、wrangler 殘留佔埠。改以 node 直接執行 wrangler 的 JS 入口，
+// 跨平台一致、kill 也確實。URL.pathname 在 Windows 是 /C:/... 需 fileURLToPath 轉換。
+const BACKEND_DIR = fileURLToPath(new URL('..', import.meta.url));
+const WRANGLER_JS = join(BACKEND_DIR, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 
 const PORT = 8799;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -20,10 +27,20 @@ async function t(name, fn) {
 }
 
 function startServer(persistDir, extraArgs = []) {
-    const proc = spawn('npx', [
-        'wrangler', 'dev', '--port', String(PORT), '--persist-to', persistDir, ...extraArgs,
-    ], { cwd: new URL('..', import.meta.url).pathname, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, stdio: 'ignore' });
+    const proc = spawn(process.execPath, [
+        WRANGLER_JS, 'dev', '--port', String(PORT), '--persist-to', persistDir, ...extraArgs,
+    ], { cwd: BACKEND_DIR, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, stdio: 'ignore' });
     return proc;
+}
+
+// 停伺服器：Windows 的 kill() 是強制終止、wrangler 來不及收掉 workerd 子程序
+// （殘留佔埠會讓後面的測試打到舊伺服器），改用 taskkill 殺整個程序樹
+function stopServer(proc) {
+    if (process.platform === 'win32' && proc.pid) {
+        spawn('taskkill', ['/F', '/T', '/PID', String(proc.pid)], { stdio: 'ignore' });
+    } else {
+        proc.kill('SIGTERM');
+    }
 }
 
 async function waitReady() {
@@ -36,10 +53,10 @@ async function waitReady() {
 
 async function applySchema(persistDir) {
     await new Promise((resolve, reject) => {
-        const p = spawn('npx', [
-            'wrangler', 'd1', 'execute', 'wgp_score_relay', '--local',
+        const p = spawn(process.execPath, [
+            WRANGLER_JS, 'd1', 'execute', 'wgp_score_relay', '--local',
             '--file=./schema.sql', '--persist-to', persistDir,
-        ], { cwd: new URL('..', import.meta.url).pathname, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, stdio: 'ignore' });
+        ], { cwd: BACKEND_DIR, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, stdio: 'ignore' });
         p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`schema exit ${code}`))));
     });
 }
@@ -271,7 +288,7 @@ try {
         assert.equal((await api('/nope', {})).status, 404);
     });
 } finally {
-    server.kill('SIGTERM');
+    stopServer(server);
     await new Promise((r) => setTimeout(r, 1500));
 }
 
@@ -291,10 +308,11 @@ try {
         assert.ok(got429, '10 連打內應出現 429');
     });
 } finally {
-    server.kill('SIGTERM');
+    stopServer(server);
     await new Promise((r) => setTimeout(r, 1000));
-    rmSync(persist, { recursive: true, force: true });
-    rmSync(persist2, { recursive: true, force: true });
+    // Windows 上 workerd 釋放檔案較慢，加 retry
+    rmSync(persist, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+    rmSync(persist2, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
 }
 
 console.log(`\n${failures.length === 0 ? `ALL PASS (${passed} tests)` : `${failures.length} FAILED: ${failures.join(', ')}`}`);

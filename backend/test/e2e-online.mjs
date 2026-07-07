@@ -28,6 +28,21 @@ const step = (icon, name, detail) => { results.push(icon); console.log(`${icon} 
 const sh = (cmd, args, opts) => spawn(cmd, args, { stdio: 'ignore', ...opts });
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
+// Windows 相容（同 api.test.mjs）：spawn 'npx' 會 ENOENT，改以 node 直接執行
+// wrangler 的 JS 入口；Python 在 Windows 叫 python 而非 python3
+const WRANGLER_JS = path.join(REPO, 'backend', 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+const wranglerCmd = (args, opts) => sh(process.execPath, [WRANGLER_JS, ...args], opts);
+const PYTHON = process.platform === 'win32' ? 'python' : 'python3';
+
+// Windows 的 kill() 收不掉 wrangler 的 workerd 子程序（殘留佔埠），改殺整個程序樹
+function stopProc(proc) {
+  if (process.platform === 'win32' && proc.pid) {
+    spawn('taskkill', ['/F', '/T', '/PID', String(proc.pid)], { stdio: 'ignore' });
+  } else {
+    proc.kill('SIGTERM');
+  }
+}
+
 async function waitHttp(url, tries = 60) {
   for (let i = 0; i < tries; i++) {
     try { await fetch(url); return; } catch { await wait(1000); }
@@ -68,13 +83,13 @@ async function judgeSubmitFlow(page) {
   // ── 起後端（乾淨 D1）與前端靜態伺服器 ──
   const persist = mkdtempSync(path.join(tmpdir(), 'wgp-online-e2e-'));
   await new Promise((res, rej) => {
-    const p = sh('npx', ['wrangler', 'd1', 'execute', 'wgp_score_relay', '--local', '--file=./schema.sql', '--persist-to', persist],
+    const p = wranglerCmd(['d1', 'execute', 'wgp_score_relay', '--local', '--file=./schema.sql', '--persist-to', persist],
       { cwd: `${REPO}/backend`, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
     p.on('exit', c => c === 0 ? res() : rej(new Error('schema fail')));
   });
-  const backend = sh('npx', ['wrangler', 'dev', '--port', '8787', '--persist-to', persist],
+  const backend = wranglerCmd(['dev', '--port', '8787', '--persist-to', persist],
     { cwd: `${REPO}/backend`, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
-  const front = sh('python3', ['-m', 'http.server', '8080', '--directory', `${REPO}/tournament-menager/dist`]);
+  const front = sh(PYTHON, ['-m', 'http.server', '8080', '--directory', `${REPO}/tournament-menager/dist`]);
   await waitHttp(`${API}/health`);
   await waitHttp(FRONT);
   step('✅', '環境', '後端(wrangler dev+D1) 與前端(8080) 皆就緒');
@@ -276,8 +291,8 @@ async function judgeSubmitFlow(page) {
   if (!errs.M.length && !errs.P1.length && !errs.P2.length) step('✅', '全程 console', '三個 context 皆無 pageerror');
 
   await browser.close();
-  backend.kill('SIGTERM');
-  front.kill('SIGTERM');
+  stopProc(backend);
+  stopProc(front);
   const failed = results.filter(r => r === '❌').length;
   console.log(`\n=== ${failed === 0 ? 'ALL PASS' : failed + ' FAILED'} (${results.length} steps) ===`);
   process.exit(failed ? 1 : 0);
