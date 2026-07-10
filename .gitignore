@@ -46,6 +46,10 @@ verify_fixes.py
 # 本機設計稿、視覺對照素材
 design-mock/
 
+# 尚未決定是否進版控的說明文件
+WGP-GM5-線上回報及計分系統說明.pdf
+docs/線上成績回報-操作手冊.html
+
 # 本機截圖
 screenshot/
 
