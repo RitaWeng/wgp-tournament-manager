@@ -136,13 +136,16 @@ database_id 已在 `wrangler.toml`，不需重建資料庫。
 4. ✅ 401 驗證通過：`POST /events` 不帶金鑰、帶錯誤金鑰皆回 `401 setup_key_required`
    （擋在寫入資料庫之前），`/health` 正常
 
-尚待 rita 在 preview 實測 UI 成功路徑：建立線上賽事填正確金鑰應成功，
-金鑰會記在主控端瀏覽器 localStorage，之後不用重填。忘記密語就再
-`npx wrangler secret put SETUP_KEY` 重設一個（舊的直接被覆蓋）。
+5. ✅ rita 於 preview 實測 UI 成功路徑：填正確金鑰建立賽事成功，金鑰已記在
+   主控端瀏覽器 localStorage，之後不用重填。**本項結案。**
+
+維運備忘：忘記或想更換密語就再 `npx wrangler secret put SETUP_KEY` 一次
+（舊的直接被覆蓋、立即生效，不用重新部署）；主控端下次建立賽事會 401 提示，
+重填新密語即可。金鑰只在建立賽事時檢查，進行中賽事的 admin／table token 不受影響。
 
 ### 其他待辦
 
-- [ ] 前端 develop → gh-pages preview 部署（主控端需從 GitHub Pages 開，QR 卡網址才正確）
+- [x] 前端 develop → gh-pages preview 部署（主控端需從 GitHub Pages 開，QR 卡網址才正確）——已完成，preview 現為 v1.4.3（2026-07-10）
 - [ ] 真手機實測（iOS Safari + Android Chrome 各走完一輪回報）——Phase 3 驗收的最後一項
 - [ ] 小型練習賽試跑（Phase 5），收集裁判回饋
 - [ ] §2.1 列的三個次要問題，Phase 5 迭代時處理
