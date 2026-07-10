@@ -2539,26 +2539,62 @@ const handleFileUpload = (event) => {
     return player ? `${number}. ${player.name}` : `選手${number}`;
   };
 
-  // 勝負紀錄條：每輪一格，顯示勝/負/輪空/進行中/未開始
-  const RecordBar = ({ player }: { player: any }) => (
-    <div className="flex gap-0.5">
-      {Array.from({ length: rounds }).map((_, i) => {
-        const r = player.rounds[i] || {};
-        const isScored = scoredRounds.includes(i + 1);
-        const isCurrent = i + 1 === currentRound;
-        let cls = 'bg-[var(--border-default)]';
-        let label = `R${i + 1} 未開始`;
-        if (isScored && r.score !== null) {
-          if (r.opponent === 0) { cls = 'bg-[var(--accent)]'; label = `R${i + 1} 輪空勝`; }
-          else if (r.score > 0) { cls = 'bg-[var(--win)]'; label = `R${i + 1} 勝 vs #${r.opponent}`; }
-          else { cls = 'bg-[var(--loss)] opacity-60'; label = `R${i + 1} 負 vs #${r.opponent}`; }
-        } else if (isCurrent) {
-          cls = 'bg-[var(--info)] opacity-50'; label = `R${i + 1} 進行中`;
+  // 勝負紀錄條：每輪一格對戰方塊 — 顯示對手隊名前兩字，hover 顯示完整對戰資訊
+  // 顏色：勝=實心綠、負=淺紅、輪空勝=灰、進行中=藍（虛線框）、未開始=空框
+  const RecordBar = ({ player }: { player: any }) => {
+    const oppName = (n: number) => players.find(p => p.number === n)?.name || `選手${n}`;
+    // 縮寫規則：取前兩字；隊名 5 字以上時再附上隊名中最後一個英文字母（分隊尾碼）
+    // 例：「建國中學A」→「建國A」、「建國中學」→「建國」；用 Array.from 切字避免特殊字元被切壞
+    const abbrev = (s: string) => {
+      const chars = Array.from(s.trim());
+      const head = chars.slice(0, 2).join('');
+      if (chars.length >= 5) {
+        for (let j = chars.length - 1; j >= 0; j--) {
+          if (/[A-Za-z]/.test(chars[j])) return head + chars[j];
         }
-        return <span key={i} className={`w-3.5 h-6 rounded-sm ${cls}`} title={label}/>;
-      })}
-    </div>
-  );
+      }
+      return head;
+    };
+    return (
+      <div className="flex gap-1">
+        {Array.from({ length: rounds }).map((_, i) => {
+          const r = player.rounds[i] || {};
+          const isScored = scoredRounds.includes(i + 1);
+          const isCurrent = i + 1 === currentRound;
+          let cls = 'border border-[var(--border-default)] text-[var(--text-disabled)]';
+          let text = '—';
+          let tip = `R${i + 1} 未開始`;
+          if (isScored && r.score !== null && r.score !== undefined) {
+            if (r.opponent === 0) {
+              cls = 'bg-[var(--border-default)] text-[var(--text-secondary)]';
+              text = '輪空'; tip = `R${i + 1} 輪空勝`;
+            } else if (r.score > 0) {
+              cls = 'bg-[var(--win)] text-[var(--win-contrast)]';
+              text = abbrev(oppName(r.opponent)); tip = `R${i + 1} 勝 vs ${getPlayerName(r.opponent)}`;
+            } else {
+              cls = 'bg-[var(--loss-soft)] text-[var(--loss)]';
+              text = abbrev(oppName(r.opponent)); tip = `R${i + 1} 負 vs ${getPlayerName(r.opponent)}`;
+            }
+          } else if (isCurrent) {
+            // 進行中：player.rounds 要算分才有對手，先從本輪桌次表撈目前配對
+            const m = (matchesByRound[i + 1] || []).find(
+              (mm: any) => mm.player1 === player.number || mm.player2 === player.number
+            );
+            const opp = m ? (m.player1 === player.number ? m.player2 : m.player1) : null;
+            cls = 'bg-[var(--info-soft)] text-[var(--info)] border border-dashed border-[color-mix(in_oklab,var(--info)_45%,transparent)]';
+            if (opp === null) { text = ''; tip = `R${i + 1} 進行中`; }
+            else if (opp === 0) { text = '輪空'; tip = `R${i + 1} 進行中・本輪輪空`; }
+            else { text = abbrev(oppName(opp)); tip = `R${i + 1} 進行中 vs ${getPlayerName(opp)}`; }
+          }
+          return (
+            <span key={i} data-tip={tip}
+              className={`tip-host w-14 h-8 px-1 rounded-md inline-flex items-center justify-center text-base font-semibold whitespace-nowrap ${cls}`}
+            >{text}</span>
+          );
+        })}
+      </div>
+    );
+  };
 
   // 緊湊視圖：前三名突顯卡片 + 其他列表
   const renderCompactStandings = (sortedPlayers: any[]) => {
@@ -2578,25 +2614,25 @@ const handleFileUpload = (event) => {
               const accent = p.rank === 1 ? 'border-[oklch(0.82_0.15_90_/_0.5)] bg-[oklch(0.82_0.15_90_/_0.04)]'
                           : p.rank === 2 ? 'border-[oklch(0.82_0.02_250_/_0.4)]'
                           : 'border-[oklch(0.70_0.13_55_/_0.4)]';
+              // 單行版型：與「其他」列共用欄位結構（名次 w-7｜籤號 w-7｜隊名 flex｜方塊｜分數 w-16）
+              // px-[7px]+1px 邊框 = 下方列的 px-2，讓方塊與分數欄上下對齊
               return (
-                <div key={p.number} className={`elevated rounded-lg p-4 border ${accent} flex items-center gap-3`}>
-                  <RankMedal rank={p.rank}/>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      {editMode
-                        ? <input type="text" value={p.name} onChange={e => handlePlayerNameChange(p.number, e.target.value)} className="px-2 h-8 text-base font-semibold flex-1"/>
-                        : <div className="font-bold text-lg truncate">{p.name}</div>
-                      }
-                      <Pill tone="muted" size="sm">#{p.number}</Pill>
-                      {editMode && <WithdrawButton player={p} onToggle={handleToggleWithdraw}/>}
-                    </div>
-                    <RecordBar player={p}/>
+                <div key={p.number} className={`elevated rounded-lg px-[7px] py-2.5 border ${accent} flex items-center gap-3`}>
+                  <span className="w-7 flex justify-center flex-shrink-0"><RankMedal rank={p.rank}/></span>
+                  <span className="font-mono-num text-xs text-[var(--text-disabled)] w-7 tabular flex-shrink-0">#{p.number}</span>
+                  <div className="flex-1 min-w-0 flex items-center gap-2">
+                    {editMode
+                      ? <input type="text" value={p.name} onChange={e => handlePlayerNameChange(p.number, e.target.value)} className="px-2 h-8 text-base font-semibold flex-1"/>
+                      : <div className="font-bold text-2xl truncate" title={p.name}>{p.name}</div>
+                    }
+                    {editMode && <WithdrawButton player={p} onToggle={handleToggleWithdraw}/>}
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <div className="font-mono-num text-3xl font-bold text-[var(--text-primary)] leading-none">{p.totalScore}</div>
-                    <div className="text-[10px] text-[var(--text-muted)] mt-1.5 tabular tracking-wide">
-                      輔分 <span className="font-mono-num font-semibold text-[var(--text-secondary)]">{p.auxScore1}</span>
-                      {' · '}
+                  <RecordBar player={p}/>
+                  <div className="text-right flex-shrink-0 w-16">
+                    <div className="font-mono-num text-2xl font-bold text-[var(--text-primary)] leading-none tabular">{p.totalScore}</div>
+                    <div className="text-[10px] text-[var(--text-muted)] mt-1 tabular tracking-wide">
+                      輔 <span className="font-mono-num font-semibold text-[var(--text-secondary)]">{p.auxScore1}</span>
+                      {'·'}
                       <span className="font-mono-num font-semibold text-[var(--text-secondary)]">{p.auxScore2}</span>
                     </div>
                   </div>
@@ -2617,7 +2653,7 @@ const handleFileUpload = (event) => {
                 <div className="flex-1 min-w-0 flex items-center gap-2">
                   {editMode
                     ? <input type="text" value={p.name} onChange={e => handlePlayerNameChange(p.number, e.target.value)} className="px-2 h-8 text-base flex-1"/>
-                    : <div className={`text-base font-medium truncate ${isWithdrawn(p) ? 'line-through' : ''}`}>{p.name}</div>
+                    : <div className={`text-xl font-medium truncate ${isWithdrawn(p) ? 'line-through' : ''}`} title={p.name}>{p.name}</div>
                   }
                   {isWithdrawn(p) && <Pill tone="muted" size="sm">棄賽</Pill>}
                   {editMode && <WithdrawButton player={p} onToggle={handleToggleWithdraw}/>}
@@ -2638,7 +2674,7 @@ const handleFileUpload = (event) => {
   // 詳細視圖：完整表格（保留所有輔分與每輪細節）
   const renderDetailStandings = (sortedPlayers: any[]) => (
     <div className="overflow-auto h-full">
-      <table className="grid-table w-full text-sm">
+      <table className="grid-table w-full text-base">
         <thead className="sticky top-0 z-10">
           <tr>
             <th className="text-left px-3 py-3 w-14">名次</th>
@@ -2656,31 +2692,34 @@ const handleFileUpload = (event) => {
         <tbody>
           {sortedPlayers.map(p => (
             <tr key={p.number} className={isWithdrawn(p) ? 'opacity-55' : ''}>
-              <td className="px-3 py-2.5"><RankMedal rank={isWithdrawn(p) ? undefined : p.rank}/></td>
-              <td className="px-2 py-2.5 font-mono-num text-sm text-[var(--text-muted)]">#{p.number}</td>
-              <td className="px-2 py-2.5 max-w-40">
+              <td className="px-3 py-1.5"><RankMedal rank={isWithdrawn(p) ? undefined : p.rank}/></td>
+              <td className="px-2 py-1.5 font-mono-num text-base text-[var(--text-muted)]">#{p.number}</td>
+              <td className="px-2 py-1.5 max-w-40">
                 <div className="flex items-center gap-2 min-w-0">
                   {editMode
                     ? <input type="text" value={p.name} onChange={e => handlePlayerNameChange(p.number, e.target.value)} className="px-2 h-8 text-base w-full"/>
-                    : <span className={`font-semibold text-base block truncate ${isWithdrawn(p) ? 'line-through' : ''}`} title={p.name}>{p.name}</span>
+                    : <span className={`font-semibold text-lg block truncate ${isWithdrawn(p) ? 'line-through' : ''}`} title={p.name}>{p.name}</span>
                   }
                   {isWithdrawn(p) && <Pill tone="muted" size="sm">棄賽</Pill>}
                   {editMode && <WithdrawButton player={p} onToggle={handleToggleWithdraw}/>}
                 </div>
               </td>
-              <td className="px-2 py-2.5 text-center font-mono-num font-bold text-lg tabular col-total">{p.totalScore}</td>
-              <td className="px-2 py-2.5 text-center font-mono-num text-[var(--text-secondary)] tabular col-aux">{p.auxScore1}</td>
-              <td className="px-2 py-2.5 text-center font-mono-num text-[var(--text-secondary)] tabular col-aux">{p.auxScore2}</td>
-              <td className="px-2 py-2.5 text-center font-mono-num text-[var(--text-secondary)] tabular col-aux">{p.auxScore3}</td>
+              <td className="px-2 py-1.5 text-center font-mono-num font-bold text-xl tabular col-total">{p.totalScore}</td>
+              <td className="px-2 py-1.5 text-center font-mono-num text-[var(--text-secondary)] tabular col-aux">{p.auxScore1}</td>
+              <td className="px-2 py-1.5 text-center font-mono-num text-[var(--text-secondary)] tabular col-aux">{p.auxScore2}</td>
+              <td className="px-2 py-1.5 text-center font-mono-num text-[var(--text-secondary)] tabular col-aux">{p.auxScore3}</td>
               {Array.from({ length: rounds }).map((_, i) => {
                 const r = p.rounds[i] || { score: null, opponent: null };
                 const isScored = scoredRounds.includes(i + 1);
                 return (
-                  <td key={i} className="px-1 py-2.5 text-center text-xs">
+                  <td key={i} className="px-1 py-1.5 text-center text-sm">
                     {isScored && r.score !== null ? (
-                      <div className="flex flex-col items-center">
-                        <span className={`font-mono-num font-bold text-base ${r.score > 0 ? 'text-[var(--win)]' : 'text-[var(--loss)]'}`}>{r.score}</span>
-                        <span className="text-[10px] text-[var(--text-muted)]">{r.opponent === 0 ? '輪空' : `vs ${r.opponent}`}</span>
+                      <div
+                        className="flex flex-col items-center tip-host"
+                        data-tip={r.opponent === 0 ? undefined : `vs ${getPlayerName(r.opponent)}`}
+                      >
+                        <span className={`font-mono-num font-bold text-lg leading-tight ${r.score > 0 ? 'text-[var(--win)]' : 'text-[var(--loss)]'}`}>{r.score}</span>
+                        <span className="text-xs text-[var(--text-muted)]">{r.opponent === 0 ? '輪空' : `vs ${r.opponent}`}</span>
                       </div>
                     ) : <span className="text-[var(--text-disabled)]">·</span>}
                   </td>

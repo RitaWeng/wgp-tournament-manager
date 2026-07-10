@@ -34,6 +34,11 @@
   --loss-soft: oklch(0.55 0.16 25 / 0.08);
   --info: oklch(0.55 0.16 240);
   --info-soft: oklch(0.55 0.16 240 / 0.08);
+
+  /* 排行榜對戰方塊：實心勝場底的文字色 + tooltip 配色 */
+  --win-contrast: #FFFFFF;
+  --tip-bg: #1A2029;
+  --tip-fg: #F0F2F5;
   --warn: oklch(0.65 0.16 70);
   --warn-soft: oklch(0.65 0.16 70 / 0.10);
 
@@ -73,6 +78,11 @@
   --loss-soft: oklch(0.68 0.22 25 / 0.16);
   --info: oklch(0.72 0.18 240);
   --info-soft: oklch(0.72 0.18 240 / 0.14);
+
+  /* 排行榜對戰方塊：實心勝場底的文字色 + tooltip 配色 */
+  --win-contrast: #0B0E13;
+  --tip-bg: #F0F2F5;
+  --tip-fg: #15181D;
   --warn: oklch(0.78 0.18 70);
   --warn-soft: oklch(0.78 0.18 70 / 0.14);
 
@@ -112,6 +122,11 @@
   --loss-soft: oklch(0.45 0.18 25 / 0.10);
   --info: oklch(0.42 0.16 240);
   --info-soft: oklch(0.42 0.16 240 / 0.10);
+
+  /* 排行榜對戰方塊：實心勝場底的文字色 + tooltip 配色 */
+  --win-contrast: #FFFFFF;
+  --tip-bg: #2E2B25;
+  --tip-fg: #F5F2EC;
   --warn: oklch(0.55 0.16 70);
   --warn-soft: oklch(0.55 0.16 70 / 0.10);
 
@@ -151,6 +166,11 @@
   --loss-soft: oklch(0.70 0.20 20 / 0.16);
   --info: oklch(0.75 0.16 230);
   --info-soft: oklch(0.75 0.16 230 / 0.14);
+
+  /* 排行榜對戰方塊：實心勝場底的文字色 + tooltip 配色 */
+  --win-contrast: #0F1822;
+  --tip-bg: #EEF3FA;
+  --tip-fg: #15181D;
   --warn: oklch(0.80 0.17 75);
   --warn-soft: oklch(0.80 0.17 75 / 0.14);
 
@@ -355,6 +375,26 @@ h1, h2, h3, .display { font-family: var(--font-display); }
   background: var(--bg-base);
   color: var(--text-secondary);
   border: 1px solid var(--border-default);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 排行榜 hover tooltip（內容來自 data-tip）：緊湊視圖對戰方塊、
+ * 詳細視圖每輪格子共用。錨定右緣向左展開，避免超出面板被 overflow 裁掉
+ * ──────────────────────────────────────────────────────────────── */
+.tip-host { position: relative; }
+.tip-host[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute; bottom: calc(100% + 7px); right: 0;
+  background: var(--tip-bg); color: var(--tip-fg);
+  font-size: 12px; font-weight: 500; white-space: nowrap;
+  padding: 5px 9px; border-radius: 6px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.22);
+  z-index: 40; pointer-events: none;
+}
+.tip-host[data-tip]:hover::before {
+  content: ""; position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: var(--tip-bg); border-bottom: none;
+  z-index: 40; pointer-events: none;
 }
 
 /* ────────────────────────────────────────────────────────────────
