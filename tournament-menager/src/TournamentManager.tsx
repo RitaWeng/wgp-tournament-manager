@@ -3567,8 +3567,9 @@ const handleFileUpload = (event) => {
                                       ? `最後上線 ${new Date(t.last_seen_at).toLocaleTimeString('zh-TW', { hour12: false })}${t.device_change_count > 0 ? `；裝置變更 ${t.device_change_count} 次（若非裁判剛到計分台重掃，請注意）` : ''}`
                                       : '尚未掃碼上線'}
                                   >
-                                    桌{t.table_no}
-                                    {seen === null ? '未上線' : fresh ? '在線' : `${Math.round(seen / 60)}分前`}
+                                    {/* 桌號與時間各自包 span：flex 的 gap 只隔開元素，相鄰純文字會黏在一起（桌11分前） */}
+                                    <span>桌{t.table_no}</span>
+                                    <span>{seen === null ? '未上線' : fresh ? '在線' : `${Math.round(seen / 60)}分前`}</span>
                                     {t.device_change_count > 0 && <Icon name="alert" className="w-3 h-3"/>}
                                   </span>
                                 );

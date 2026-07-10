@@ -208,9 +208,15 @@ const JudgePage = () => {
     if (!view) {
         return <Shell><BigMsg icon="⏳" title="連線中…" sub="正在取得本桌對局資料" /></Shell>;
     }
-    if (!view.roundNo || !view.pairing) {
+    if (!view.roundNo) {
         return <Shell><BigMsg icon="🕐" title="等待桌次發佈"
             sub={<>主控端尚未發佈本輪桌次。<br />頁面會自動更新，請稍候。</>} /></Shell>;
+    }
+    // 本輪已發佈但這桌沒有配對列：輪空桌（發佈時主控端過濾掉 player2=0），
+    // 或棄賽後場次變少而空出的桌
+    if (!view.pairing) {
+        return <Shell><BigMsg icon="💤" title="本桌本輪輪空"
+            sub={<>本輪桌次已發佈，這一桌沒有安排比賽，無需回報。<br />頁面會自動更新，下一輪有對局時會直接顯示。</>} /></Shell>;
     }
 
     const p = view.pairing;
