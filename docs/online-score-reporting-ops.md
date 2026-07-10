@@ -125,17 +125,20 @@ database_id 已在 `wrangler.toml`，不需重建資料庫。
 
 ## 4. 剩餘待辦
 
-### 2026-07-08 已寫好待部署：SETUP_KEY 建立金鑰（防額度濫用）
+### 2026-07-10 已上線：SETUP_KEY 建立金鑰（防額度濫用）
 
-程式碼已完成並通過驗證（後端 24 項測試、E2E 18 步），**尚未部署**。明天上線步驟：
+程式碼 2026-07-08 完成（後端 24 項測試、E2E 18 步全過），2026-07-10 部署完成：
 
-1. 部署後端：`cd backend && npm run deploy`
-2. 設定金鑰（互動式，輸入一段自訂密語）：`cd backend && npx wrangler secret put SETUP_KEY`
-   —— 順序無所謂：金鑰沒設定前後端不驗證（行為同現在），設定後立即生效
-3. 升版（1.4.2 → 1.4.3，照 README「版本升級」的手動 commit/tag 流程）並
-   `cd tournament-menager && npm run deploy:preview`
-4. 在 preview 測：建立線上賽事**不填金鑰應失敗（401 提示）**、填正確金鑰成功；
-   金鑰會記在主控端瀏覽器，之後不用重填
+1. ✅ 後端部署（`cd backend && npm run deploy`），含金鑰驗證的新版 Worker 上線
+2. ✅ rita 執行 `npx wrangler secret put SETUP_KEY` 設定密語
+   （`npx wrangler secret list` 確認 SETUP_KEY 存在；密語不在 repo、不在對話紀錄）
+3. ✅ 版號 1.4.3（commit `ed15e3a`、tag `v1.4.3`），preview 已部署並確認出 1.4.3
+4. ✅ 401 驗證通過：`POST /events` 不帶金鑰、帶錯誤金鑰皆回 `401 setup_key_required`
+   （擋在寫入資料庫之前），`/health` 正常
+
+尚待 rita 在 preview 實測 UI 成功路徑：建立線上賽事填正確金鑰應成功，
+金鑰會記在主控端瀏覽器 localStorage，之後不用重填。忘記密語就再
+`npx wrangler secret put SETUP_KEY` 重設一個（舊的直接被覆蓋）。
 
 ### 其他待辦
 
