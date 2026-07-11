@@ -23,10 +23,21 @@ function hit(key: string, limit: number): boolean {
 export function rateLimit() {
     return async (c: Context<AppEnv>, next: Next) => {
         const limit = Number(c.env.RATE_LIMIT_PER_MIN) > 0 ? Number(c.env.RATE_LIMIT_PER_MIN) : 120;
-        const ipOk = hit(`ip:${clientIp(c)}`, limit);
         const auth = c.req.header('Authorization') || '';
-        // token 各自限流（取雜湊前先截斷即可，僅作分桶 key 用）
-        const tokenOk = auth ? hit(`tok:${auth.slice(-24)}`, limit) : true;
+        // 只有格式正確的 Bearer token（同 auth.ts 的驗法）才視為「帶 token」；
+        // 亂寫 header 的探測回到未認證窄桶，拿不到放寬額度
+        const wellFormed = /^Bearer\s+[0-9a-f]{32,64}$/i.test(auth);
+        // token 各自限流（取尾段即可，僅作分桶 key 用）
+        const tokenOk = wellFormed ? hit(`tok:${auth.slice(-24)}`, limit) : true;
+        // 帶 token 的請求以 per-token 桶為主，IP 桶放寬 10 倍：場地 Wi-Fi/NAT 下全場共用
+        // 一個公網 IP，50 桌 × 每 10 秒輪詢 ≈ 300 req/min，基本額度會誤傷正常流量。
+        // 未帶 token 的請求（建立賽事等）維持基本額度，且與帶 token 流量分桶，
+        // 裁判輪詢才不會把未認證端點的額度吃光。偽造正確格式仍可拿到寬桶——
+        // token 為 128-bit 隨機值猜不中，剩餘風險是燒每日請求額度，屬既有攻擊面
+        // （多 IP 本就繞得過 per-IP 限流），邊緣防護應由 Cloudflare WAF 規則承擔。
+        const ipOk = wellFormed
+            ? hit(`ipa:${clientIp(c)}`, limit * 10)
+            : hit(`ip:${clientIp(c)}`, limit);
         if (!ipOk || !tokenOk) return c.json({ error: 'rate_limited' }, 429);
         return next();
     };

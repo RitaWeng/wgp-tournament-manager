@@ -11,7 +11,7 @@ import { judge } from './judge';
 export type Env = {
     DB: D1Database;
     ALLOWED_ORIGINS?: string;     // 逗號分隔 CORS allowlist
-    RATE_LIMIT_PER_MIN?: string;  // 每分鐘請求上限（每 IP / 每 token 各自計）
+    RATE_LIMIT_PER_MIN?: string;  // 每分鐘請求上限（每 token 與未認證 IP；帶 token 的 IP 桶為此值 ×10，容納場地共用 IP）
     SETUP_KEY?: string;           // 建立賽事金鑰（wrangler secret；未設定 = 不驗，本地開發/測試用）
 };
 

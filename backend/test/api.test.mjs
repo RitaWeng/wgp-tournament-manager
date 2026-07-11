@@ -334,9 +334,49 @@ try {
 console.log('▶ Rate limit（RATE_LIMIT_PER_MIN=5）');
 const persist2 = mkdtempSync(join(tmpdir(), 'wgp-relay-rl-'));
 await applySchema(persist2);
-server = startServer(persist2, ['--var', 'RATE_LIMIT_PER_MIN:5']);
+server = startServer(persist2, ['--var', 'RATE_LIMIT_PER_MIN:5', '--var', `SETUP_KEY:${SETUP_KEY}`]);
 try {
     await waitReady();
+
+    // 順序刻意：先建賽事（未認證額度還沒被吃）→ 帶 token 測試 → 最後才連打 /health
+    let rlTokens;
+    await t('低限額伺服器建立賽事', async () => {
+        const r = await api('/events', { method: 'POST', key: SETUP_KEY, body: { name: 'rl', tables: 3 } });
+        assert.equal(r.status, 200);
+        rlTokens = (await r.json()).tableTokens;
+    });
+
+    await t('場地共用 IP：多桌 token 各自輪詢不觸發 IP 限流', async () => {
+        // 3 桌 × 4 次 = 12 次同 IP 請求 > 未認證額度 5，但帶 token 的 IP 桶是 5×10，
+        // 每 token 4 次也在額度內 → 全數放行（模擬全場裁判在同一個場地 Wi-Fi/NAT 後面）
+        for (const { token } of rlTokens) {
+            for (let i = 0; i < 4; i++) {
+                const r = await api('/judge/pairing', { token });
+                assert.notEqual(r.status, 429, '正常輪詢不應被限流');
+            }
+        }
+    });
+
+    await t('單一 token 連打仍會 429（per-token 桶未鬆綁）', async () => {
+        let got429 = false;
+        for (let i = 0; i < 10; i++) {
+            const r = await api('/judge/pairing', { token: rlTokens[0].token });
+            if (r.status === 429) { got429 = true; break; }
+        }
+        assert.ok(got429, '同一 token 超打應出現 429');
+    });
+
+    await t('格式錯誤的 Authorization 拿不到放寬額度（輪換也沒用）', async () => {
+        let got429 = false;
+        for (let i = 0; i < 10; i++) {
+            const r = await fetch(`${BASE}/judge/pairing`, {
+                headers: { Origin: ORIGIN, Authorization: `Bearer not-hex-${i}` },
+            });
+            if (r.status === 429) { got429 = true; break; }
+        }
+        assert.ok(got429, '亂寫 header 連打應回到未認證窄桶而 429');
+    });
+
     await t('連打超過限額 → 429', async () => {
         let got429 = false;
         for (let i = 0; i < 10; i++) {
