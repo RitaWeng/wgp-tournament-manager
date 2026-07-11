@@ -99,7 +99,7 @@ fast-forward 併入 develop（`c1cf006..ddf3a2e`）並推上 GitHub。
 
 ```bash
 cd backend
-npm test          # 22 項整合測試（Windows/Mac 都能跑）
+npm test          # 28 項整合測試（Windows/Mac 都能跑）
 npm run deploy    # 重新部署（需已 wrangler login）
 ```
 
