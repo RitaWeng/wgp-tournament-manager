@@ -2236,6 +2236,15 @@ const handleFileUpload = (event) => {
       }));
     try {
       await onlineSync.publishPairings(onlineCfg, currentRound, pairings);
+      // 重發同一輪時伺服器 pairings 整輪刪除重建、version 歸 0；本輪已處理紀錄一併清掉，
+      // 否則舊 version 會在 processJudgeResults 把新配對的回報永遠擋掉
+      setJudgeReports(prev => {
+        const next: typeof prev = {};
+        for (const [k, v] of Object.entries(prev)) {
+          if (!k.startsWith(`${currentRound}-`)) next[k] = v;
+        }
+        return next;
+      });
       message.success(`已發佈第 ${currentRound} 輪桌次（${pairings.length} 桌），裁判手機數秒內會更新`);
     } catch (e: any) {
       message.error(e.message === 'round_locked'
