@@ -2,6 +2,8 @@
 
 > 2026-07-07 完成。本文件記錄「從功能分支審查到後端正式上線」的完整過程與結果，
 > 以及日後維運需要知道的一切。設計規格見 `online-score-reporting-plan.md`。
+> 比賽日操作手冊（含逐步截圖）另存於 `docs/線上成績回報-操作手冊.html` ——
+> 單一自足 HTML、約 3.8MB 內嵌截圖，**未納入版控**（避免 repo 膨脹），僅存於主控電腦；更新截圖後請同步備份。
 
 ---
 
@@ -15,7 +17,7 @@
 | D1 資料庫 | `wgp_score_relay`，region APAC，database_id `c1defc9f-e9a1-429b-8a80-0390ef9c8aff`（已寫入 `backend/wrangler.toml`，非機密） |
 | retention cron | 每日 UTC 19:17（台北 03:17）自動刪 7 天前的賽事 |
 | CORS allowlist | `https://ritaweng.github.io` + localhost:8080（開發用） |
-| rate limit | 每 IP / 每 token 各 120 次/分 |
+| rate limit | 每 token 120 次/分；IP 桶分流（`68d161a`）：帶格式正確 token 的請求 1200 次/分（容納場地共用 IP），未認證請求 120 次/分（獨立桶，輪詢不吃建立賽事額度） |
 | 建立金鑰 SETUP_KEY | wrangler secret（**不在 repo、只在 rita 腦中與主控端 localStorage**）；「建立線上賽事」時要填。忘記就 `npx wrangler secret put SETUP_KEY` 重設一個新的 |
 
 ---
