@@ -153,3 +153,30 @@ unlock 迴圈無來源可掃、**永不送 `unlockRoundRemote`**，導致本機�
   卡死（需人工介入）；S5/S6 為操作陷阱（有正確操作順序可規避，但缺防呆）。
 - **進度（2026-07-12）**：P0（鎖定狀態對帳）已實作並實測，S1/S2/S3/S4 修復；
   S5（P1 配對對帳）、S6（P2 重設防呆）、S7＋守衛可見化（P1）尚未動工。
+
+---
+
+## 6. 附錄：P0 實作與驗證歷程（2026-07-12）
+
+留作日後接手 P1/P2 或回顧設計取捨的紀錄。
+
+1. **問題發現**：使用者實測「先本機算分鎖定 R1，才建立線上賽事」，發現裁判送出的更正
+   被主控端靜默忽略、兩端皆無提示。
+2. **系統性列舉＋實測**：讀通 `sync.ts`／`backend/src/*`／輪詢與發佈流程後，以「本機動作 ×
+   線上賽事生命週期」矩陣列出 S1–S7；架本機後端（`wrangler dev`）＋真實主控端 UI
+   （Playwright 驅動）＋ HTTP 模擬裁判，**六個情境（S1/S2/S4/S5/S6/S7）全部重現**。
+3. **根因定位**：三條互不對帳的非同步流程 ＋ 兩個靜默守衛 ＋ 後端非權威（見 §1）。
+4. **P0 實作**：新增 `reconcileRoundLocks` 對帳機制（見 §3 P0），改 `calculateScores`／
+   `unlockRound`／`createOnlineEvent`／發佈流程／輪詢 tick。
+5. **第一次 Codex review（gpt-5.5）找到真漏洞**：初版 unlock 方向只掃 in-memory 快取
+   `lockReconcileRef`，**頁面重載後快取清空 → 解鎖跨 session 的已鎖輪次時漏送 unlock**，
+   後端持續鎖定卡死裁判。這是我原本 S4 測試（同 session 完成）沒覆蓋的路徑。
+6. **修正並補測**：改用 `backendKnownRef` 驅動 unlock 方向、`unlockRound` 明確納入被解鎖
+   輪次；新增 **S8**（算分鎖定 → 重載 → 解鎖）實測確認後端自動變 open、裁判恢復可更正。
+   過程中另發現 S8 首度失敗是**測試腳本假象**（Playwright `addInitScript` 在 reload 時重跑、
+   覆蓋 app 已寫入的真實狀態），改為「localStorage 為空才 seed」後排除——非產品問題。
+7. **二次驗證**：重跑 Codex review → **無發現**；S1–S4＋S8 全綠；後端 28 項＋前端 fixture
+   全過；happy path 不受影響。P0 於 commit `d50f990` 落地。
+
+> 方法論備忘：這次「自寫 Playwright＋本機後端重現 → 修 → 對抗式 review 找補漏 → 補測 →
+> 再 review」的循環有效抓到單靠單元測試會漏的跨 session／時序類缺口，值得沿用到 P1/P2。
