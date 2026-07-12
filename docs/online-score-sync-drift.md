@@ -151,7 +151,9 @@ unlock 迴圈無來源可掃、**永不送 `unlockRoundRemote`**，導致本機�
 - 影響面僅限 **有啟用線上回報** 的比賽；純手動流程完全不受影響。
 - 嚴重度：S1/S2/S3/S7 會導致**裁判更正靜默遺失**（資料正確性，最高）；S4 造成雙方
   卡死（需人工介入）；S5/S6 為操作陷阱（有正確操作順序可規避，但缺防呆）。
-- **進度（2026-07-12）**：P0（鎖定狀態對帳）已實作並實測，S1/S2/S3/S4 修復；
+- **進度（2026-07-12）**：P0（鎖定狀態對帳）已實作並實測，S1/S2/S3/S4 修復（commit `d50f990`）；
+  但後續自我 code-review 在 P0 內找到殘留缺口 **F1–F5（見 §7）**，其中 F1（解鎖失敗後重載永久
+  漂移）、F2（解鎖失敗無提示）應排 **P0.1** 修——建議走「後端狀態端點 → 無狀態對帳」。
   S5（P1 配對對帳）、S6（P2 重設防呆）、S7＋守衛可見化（P1）尚未動工。
 
 ---
@@ -180,3 +182,49 @@ unlock 迴圈無來源可掃、**永不送 `unlockRoundRemote`**，導致本機�
 
 > 方法論備忘：這次「自寫 Playwright＋本機後端重現 → 修 → 對抗式 review 找補漏 → 補測 →
 > 再 review」的循環有效抓到單靠單元測試會漏的跨 session／時序類缺口，值得沿用到 P1/P2。
+
+---
+
+## 7. P0 殘留缺口（自我 code-review 發現，2026-07-12）— 待 P0.1 修
+
+P0 commit `d50f990` 後再跑一次 high-effort 多角度 code-review（8 角度 finder + 驗證輪），
+在 P0 自己的實作裡找到以下殘留缺口。**F1/F2 是 P0 沒完全解決其宣稱要解決問題的證據**，
+應排 P0.1 修。程式位置以 commit `d50f990` 當時行號為準（之後可能位移，以符號為準）。
+
+| # | 嚴重度 | 缺口 | 觸發 / 後果 |
+|---|--------|------|-------------|
+| **F1** | **高（CONFIRMED）** | **解鎖失敗後重載 → 永久鎖定漂移** | 解鎖 R 但 `unlockRoundRemote` 失敗，於下次 4 秒輪詢重試前重載。`backendKnownRef`（in-memory、未持久化）清空、`scoredRounds` 還原後不含 R → 對帳只掃由 scored 重建的 `known`、永不再考慮 R → 後端永久 locked、裁判被擋。且 R 本地顯示為「未鎖定可編輯」（`isLocked=scoredRounds.includes` 為 false），操作者無從再觸發解鎖，**UI 無法恢復、兩端無訊號**。與 §6 步驟 5 Codex 找到的是同類漏洞，往下深一層。 |
+| **F2** | **中高（CONFIRMED，regression）** | **解鎖失敗完全無提示** | `lockSyncPending = scored.filter(r => confirmed.get(r)!=='locked')` 只涵蓋「應鎖定」方向；解鎖目標不在 scored → 永不進 pending → 無「⟳ 鎖定同步中」chip。且此 commit 把舊版 unlock 失敗的 `message.warning` 移除。解鎖失敗比改動前更隱形，與 F1 加乘。 |
+| **F3** | 低-中（CONFIRMED，transient） | **幽靈鎖定輪次** | `createOnlineEvent` 對所有 scoredRounds 發 `lockRound`，會替「從未發佈」的輪次在後端 upsert 出無 pairing 的 locked round。離線打完 1-5 輪才建賽時，第 6 輪發佈前掃碼的裁判從 `/judge/pairing` 取到 `MAX(round_no)=5, locked, pairing=null`，看到「第 5 輪已鎖定、無對戰」。發佈下一輪即消失；重發 1-5 輪會 409。 |
+| **F4** | 低-中（PLAUSIBLE） | **重入守衛丟立即推送＋舊閉包瞬間反向** | 慢速對帳（await 最長 8s）進行中時的算分/解鎖 reconcile 撞 `reconcilingRef` early-return、延後一個輪詢週期，窗內裁判可提交到「操作者以為已鎖」的輪次；或 in-flight 對帳用舊 scored 閉包＋最新 known 誤送反向 lock/unlock。最終收斂但有短暫錯態。 |
+| **F5** | 低（PLAUSIBLE） | **非陣列 scoredRounds 卡死對帳** | `scored.forEach` 在 `try` 之前；損毀/手改的匯入狀態（`scoredRounds` 為 null/純量，還原僅 `!==undefined` 防呆）→ forEach 拋錯逃過 finally → `reconcilingRef` 永久卡 true → 整個 session 鎖定對帳靜默死亡＋unhandledrejection。 |
+
+### 建議修法：P0.1（後端狀態端點 → 無狀態對帳）— 一次解 F1/F2/F5 根因
+
+F1/F2/F5 的共同根因（code-review altitude 角度亦指出）：**後端沒有「查各輪 status」端點，
+逼前端維護 `confirmed` Map ＋ `known` Set 兩份客端狀態鏡像**，任何鏡像失憶（重載）或未同步
+路徑都會漏送。正解：
+
+1. **後端**：於既有 `GET /events/:id/results`（4 秒輪詢已在打）的回應**附帶各輪 status**
+   （`rounds: [{round_no, status}]`，一次小 SELECT、零額外 round-trip），或新增
+   `GET /events/:id/rounds`。
+2. **前端**：`reconcileRoundLocks` 改為**無狀態**——拿後端回報的各輪 status，與本機
+   `scoredRounds` 推導的 desired 逐輪 diff，只推送不一致者。刪除 `lockReconcileRef`／
+   `backendKnownRef`／三處 reset。如此：
+   - F1 自癒：重載後首次輪詢就看到「後端 R=locked 但本機未算分」→ 補送 unlock。
+   - F2 可見：pending 由「後端狀態≠本機 desired」推導，涵蓋 unlock 方向。
+   - F5 消失：不再有跨呼叫的 in-memory 狀態可卡死。
+3. **F3**：`createOnlineEvent`／對帳只鎖「後端已知（已發佈或已回報）」的輪次，別替從未發佈的
+   已算分舊輪造 round row；或建賽時只同步 ≤ 當前輪的已發佈輪次。
+4. **F4**：把「進行中被守衛丟棄」的呼叫記一個 dirty flag，reconcile 結束時若 dirty 再跑一次，
+   而非只等下個輪詢；或直接接受 ≤4s 收斂並補一行註解。
+5. **F2 立即止血（不等 P0.1）**：可先在 unlock 推送失敗時加回一則 warning，或把 unlock 方向
+   也納入 `lockSyncPending`（`known` 中 desired=open 但 confirmed≠open 者）。
+
+### 本次 code-review 的重現/驗證方式（P0.1 沿用）
+
+- 本機後端：`cd backend && npm run db:local && npx wrangler dev --port 8787`
+- 前端：`cd tournament-menager && npm run build`，`cd dist && python -m http.server 8080`
+- 驅動：Playwright（`playwright-core` + 本機 chromium）真實開主控端 UI ＋ `fetch` 模擬裁判
+  打 `/judge/pairing`、`/judge/result`。情境腳本形態見 §6（S1–S8）；為 F1 應新增
+  「解鎖失敗（route abort）→ 重載 → 驗後端仍 locked 且無重試」的回歸。
