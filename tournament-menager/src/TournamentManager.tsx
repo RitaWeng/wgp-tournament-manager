@@ -900,8 +900,8 @@ const handleToggleWithdraw = async (playerNumber) => {
     return () => window.removeEventListener('keydown', onKey);
   }, [projectionMode]);
 
-  // 桌次表投影：選「能塞下的最少欄數」最大化卡片寬度，再用 grid 平均分配每欄列數
-  // 卡片愈寬 + 列高愈寬鬆，FitText 才有空間用更大字級
+  // 桌次表投影（堆疊版）：每張卡 = 桌號跨兩行 + 兩隊上下堆疊
+  // 逐一嘗試欄數，挑「隊名可達字級」最大的組合（欄多→卡高→行高大，但卡不能太窄）
   useLayoutEffect(() => {
     if (projectionMode !== 'tables') return;
     const total = (matchesByRound[selectedRound] || []).length;
@@ -913,28 +913,38 @@ const handleToggleWithdraw = async (playerNumber) => {
       const W = el.clientWidth;
       const H = el.clientHeight;
       if (W <= 0 || H <= 0) return;
-      const GAP_Y = 8;
-      const GAP_X = 24;
-      const ROW_H_EST = 76;   // 估算每張卡的最小高度（含 padding 與 gap）以推算可塞列數
-      const MAX_ROW_H = 200;  // 列高上限：桌數少時讓卡片長高吃滿垂直空間，字級跟著放大
-      const MIN_W = 420;
-      const MAX_W = 1440;     // 卡片寬上限：投影時盡量吃滿水平空間
+      const GAP_Y = 10;
+      const GAP_X = 20;
+      const MIN_CARD_H = 104; // 兩行隊伍 + padding 的最小高度
+      const MAX_CARD_H = 300;
+      const MIN_W = 360;
+      const MAX_W = 1440;
 
-      // 1) 用 ROW_H_EST 估出單欄能塞幾列，反推欄數（與舊版邏輯相容，避免少桌數時退成 1 欄）
-      const rowsPerColEst = Math.max(1, Math.floor((H + GAP_Y) / (ROW_H_EST + GAP_Y)));
-      const chosenCols = Math.max(1, Math.ceil(total / rowsPerColEst));
-      // 2) 再用 ceil(total/cols) 平均分配每欄列數（搭配 grid 強制每欄相同列數）
-      const chosenRows = Math.ceil(total / chosenCols);
-
-      const idealW = (W - GAP_X * (chosenCols - 1)) / chosenCols - 4;
-      const cardW = Math.max(MIN_W, Math.min(MAX_W, idealW));
-      const idealRowH = (H - GAP_Y * (chosenRows - 1)) / chosenRows;
-      const rowH = Math.max(ROW_H_EST, Math.min(MAX_ROW_H, idealRowH));
-
-      setTablesCardWidth(Math.round(cardW));
-      setTablesCols(chosenCols);
-      setTablesRowsPerCol(chosenRows);
-      setTablesRowH(Math.round(rowH));
+      let best: null | { score: number; cols: number; rows: number; rowH: number; cardW: number } = null;
+      for (let cols = 1; cols <= Math.min(8, total); cols++) {
+        const rows = Math.ceil(total / cols);
+        const rowH = Math.min(MAX_CARD_H, (H - GAP_Y * (rows - 1)) / rows);
+        const cardW = Math.min(MAX_W, (W - GAP_X * (cols - 1)) / cols - 4);
+        if (rowH < MIN_CARD_H || cardW < MIN_W) continue;
+        const lineH = (rowH - 32) / 2; // 扣 padding 與分隔線後的單行高
+        const score = Math.min(cardW * 0.10, lineH * 0.8); // ≈ 該組合下隊名可達字級
+        if (!best || score > best.score) best = { score, cols, rows, rowH, cardW };
+      }
+      if (!best) {
+        // 桌數多到塞不下時的保底：以最小卡高推欄數、寬度夾在下限，寧可擠也不裁列
+        const maxRows = Math.max(1, Math.floor((H + GAP_Y) / (MIN_CARD_H + GAP_Y)));
+        const cols = Math.max(1, Math.ceil(total / maxRows));
+        const rows = Math.ceil(total / cols);
+        best = {
+          score: 0, cols, rows,
+          rowH: Math.max(88, (H - GAP_Y * (rows - 1)) / rows),
+          cardW: Math.max(320, Math.min(MAX_W, (W - GAP_X * (cols - 1)) / cols - 4)),
+        };
+      }
+      setTablesCardWidth(Math.round(best.cardW));
+      setTablesCols(best.cols);
+      setTablesRowsPerCol(best.rows);
+      setTablesRowH(Math.round(best.rowH));
     };
 
     compute();
@@ -2990,18 +3000,15 @@ const handleFileUpload = (event) => {
     const matchesForRound = matchesByRound[selectedRound] || [];
     const total = matchesForRound.length;
     const nameOf = (num: number) => players.find(p => p.number === num)?.name || '';
-    // 字級全部隨列高/卡寬縮放：桌數少 → 卡片大 → 字大，吃滿投影空間
-    // 隊名上限貼近卡片內部可用高度（列高 − py-3 上下 24px，行高 1.15）
-    const widthCap = tablesCardWidth * 0.07;
-    const heightCap = tablesRowH * 0.58;
-    const nameMaxFont = Math.min(80, Math.max(24, Math.round(Math.min(widthCap, heightCap))));
+    // 堆疊版字級：以單行高（卡高扣 padding 與分隔線再除 2）與卡寬推算
+    const lineH = Math.max(24, (tablesRowH - 32) / 2);
+    const nameMaxFont = Math.min(80, Math.max(22, Math.round(Math.min(tablesCardWidth * 0.10, lineH * 0.8))));
     // 下限抓上限一半：長隊名（英文全名）優先縮小塞完整，仍塞不下才截斷
     const nameMinFont = Math.max(15, Math.round(nameMaxFont * 0.5));
-    // 桌次號碼是全場掃視重點，字級比隊名再大一階
-    const tableNumFont = Math.min(88, Math.max(38, Math.round(tablesRowH * 0.5)));
+    // 桌次號碼是全場掃視重點，跨兩行置中、字級最大
+    const tableNumFont = Math.min(96, Math.max(36, Math.round(tablesRowH * 0.4)));
     const tableLabelFont = Math.max(12, Math.round(tableNumFont * 0.3));
-    const pillFont = Math.min(44, Math.max(20, Math.round(tablesRowH * 0.26)));
-    const vsFont = Math.min(24, Math.max(12, Math.round(tablesRowH * 0.14)));
+    const pillFont = Math.min(52, Math.max(18, Math.round(lineH * 0.58)));
 
     return (
       <div className="flex-1 flex flex-col items-center px-6 pt-6 pb-5 overflow-hidden min-h-0 standings-stage">
@@ -3021,8 +3028,8 @@ const handleFileUpload = (event) => {
               gridTemplateColumns: `repeat(${tablesCols}, ${tablesCardWidth}px)`,
               gridTemplateRows: `repeat(${tablesRowsPerCol}, ${tablesRowH}px)`,
               gridAutoFlow: 'column',
-              columnGap: '24px',
-              rowGap: '8px',
+              columnGap: '20px',
+              rowGap: '10px',
             }}
           >
             {matchesForRound.map((m: any, mi: number) => {
@@ -3040,56 +3047,43 @@ const handleFileUpload = (event) => {
                 : isOdd
                 ? 'text-[var(--proj-table-odd)]'
                 : 'text-[var(--proj-table-even)]';
-              const pillColor = isBye
-                ? '!text-[var(--text-secondary)] !font-bold'
-                : '!text-[var(--text-primary)] !font-bold';
+              // 隊伍編號：純數字不加膠囊框（Pill 的圓角底在投影上是多餘視覺元素）
+              const seedColor = isBye ? 'text-[var(--text-secondary)]' : 'text-[var(--text-primary)]';
               return (
-                <div key={mi} className={`flex items-center gap-4 px-5 py-3 rounded-xl border-2 h-full ${cardClass}`} style={{ width: `${tablesCardWidth}px` }}>
-                  {/* 「桌」標籤放數字左側而非上方：桌號本身才會與隊名同一條垂直中線 */}
+                <div key={mi} className={`flex items-center gap-4 px-5 py-2.5 rounded-xl border-2 h-full ${cardClass}`} style={{ width: `${tablesCardWidth}px` }}>
+                  {/* 桌號跨兩行垂直置中，「桌」標籤放數字左側 */}
                   <div className="flex items-center justify-center gap-1.5 flex-shrink-0" style={{ minWidth: `${Math.ceil(tableNumFont * 1.5)}px` }}>
                     <div className="text-[var(--text-secondary)] leading-none" style={{ fontSize: `${tableLabelFont}px` }}>桌</div>
                     <div className={`font-mono-num font-extrabold leading-none tabular ${numColor}`} style={{ fontSize: `${tableNumFont}px` }}>{isBye ? '—' : m.table}</div>
                   </div>
-                  {isBye ? (
-                    /* 與正常卡同樣的左右分欄：隊名佔左半（字級才會跟一般隊伍一致），輪空放對手位置 */
-                    <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm" className={`justify-center tabular !px-2 flex-shrink-0 ${pillColor}`} style={{ fontSize: `${pillFont}px`, minWidth: `${Math.ceil(pillFont * 2.6)}px` }}>#{m.player1}</Pill>
-                        <FitText
-                          text={nameOf(m.player1)}
-                          maxFontPx={nameMaxFont}
-                          minFontPx={nameMinFont}
-                          className="flex-1 font-extrabold text-[var(--text-secondary)]"
-                        />
-                      </div>
-                      <div className="px-1" style={{ fontSize: `${vsFont}px` }}></div>
-                      <div className="flex items-center min-w-0">
+                  {/* 兩隊上下堆疊（結構參考 screenshot/投影參考.png）：每隊獨佔一行，
+                      隊名擁有整行寬度不再與對手搶空間；輪空放在對手那一行 */}
+                  <div className="flex-1 min-w-0 self-stretch flex flex-col justify-center">
+                    <div className="flex-1 min-h-0 flex items-center gap-3 min-w-0">
+                      <span className={`inline-flex justify-center items-center tabular font-bold flex-shrink-0 ${seedColor}`} style={{ fontSize: `${pillFont}px`, minWidth: `${Math.ceil(pillFont * 2.2)}px` }}>{m.player1}</span>
+                      <FitText
+                        text={nameOf(m.player1)}
+                        maxFontPx={nameMaxFont}
+                        minFontPx={nameMinFont}
+                        className={`flex-1 font-extrabold${isBye ? ' text-[var(--text-secondary)]' : ''}`}
+                      />
+                    </div>
+                    <div className="flex-1 min-h-0 flex items-center gap-3 min-w-0 border-t border-[var(--border-default)]">
+                      {isBye ? (
                         <Pill tone="muted" size="md" style={{ fontSize: `${pillFont}px` }}>輪空</Pill>
-                      </div>
+                      ) : (
+                        <>
+                          <span className={`inline-flex justify-center items-center tabular font-bold flex-shrink-0 ${seedColor}`} style={{ fontSize: `${pillFont}px`, minWidth: `${Math.ceil(pillFont * 2.2)}px` }}>{m.player2}</span>
+                          <FitText
+                            text={nameOf(m.player2)}
+                            maxFontPx={nameMaxFont}
+                            minFontPx={nameMinFont}
+                            className="flex-1 font-extrabold"
+                          />
+                        </>
+                      )}
                     </div>
-                  ) : (
-                    <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm" className={`justify-center tabular !px-2 flex-shrink-0 ${pillColor}`} style={{ fontSize: `${pillFont}px`, minWidth: `${Math.ceil(pillFont * 2.6)}px` }}>#{m.player1}</Pill>
-                        <FitText
-                          text={nameOf(m.player1)}
-                          maxFontPx={nameMaxFont}
-                          minFontPx={nameMinFont}
-                          className="flex-1 font-extrabold"
-                        />
-                      </div>
-                      <div className="tracking-[0.3em] text-[var(--text-secondary)] font-mono-num font-semibold px-1" style={{ fontSize: `${vsFont}px` }}>VS</div>
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm" className={`justify-center tabular !px-2 flex-shrink-0 ${pillColor}`} style={{ fontSize: `${pillFont}px`, minWidth: `${Math.ceil(pillFont * 2.6)}px` }}>#{m.player2}</Pill>
-                        <FitText
-                          text={nameOf(m.player2)}
-                          maxFontPx={nameMaxFont}
-                          minFontPx={nameMinFont}
-                          className="flex-1 font-extrabold"
-                        />
-                      </div>
-                    </div>
-                  )}
+                  </div>
                 </div>
               );
             })}
