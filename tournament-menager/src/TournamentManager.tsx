@@ -181,7 +181,9 @@ const FitText = ({
     if (!container || !measure) return;
 
     const fit = () => {
-      const containerWidth = container.clientWidth;
+      // 用 getBoundingClientRect 取次像素寬度：scrollWidth 是整數，文字寬剛好等於
+      // 容器寬時會誤判塞得下，實際渲染卻因次像素溢位觸發刪節號；再留 0.5px 安全邊
+      const containerWidth = container.getBoundingClientRect().width;
       if (containerWidth <= 0) return;
       let lo = minFontPx;
       let hi = maxFontPx;
@@ -189,7 +191,7 @@ const FitText = ({
       while (lo <= hi) {
         const mid = (lo + hi) >> 1;
         measure.style.fontSize = `${mid}px`;
-        if (measure.scrollWidth <= containerWidth) {
+        if (measure.getBoundingClientRect().width <= containerWidth - 0.5) {
           best = mid;
           lo = mid + 1;
         } else {
@@ -200,9 +202,15 @@ const FitText = ({
     };
 
     fit();
+    // 網頁字體（如 extrabold 字重）是首次使用才觸發下載，載完字寬會變，
+    // 每次載入完成都要重量，否則以 fallback 字體量出的字級會溢出被裁
+    document.fonts?.addEventListener?.('loadingdone', fit);
     const ro = new ResizeObserver(fit);
     ro.observe(container);
-    return () => ro.disconnect();
+    return () => {
+      document.fonts?.removeEventListener?.('loadingdone', fit);
+      ro.disconnect();
+    };
   }, [text, maxFontPx, minFontPx]);
 
   return (
@@ -238,7 +246,8 @@ type IconName =
   | 'monitor' | 'dice' | 'swap' | 'calculator' | 'check' | 'x'
   | 'info' | 'help' | 'edit' | 'eye' | 'lock' | 'unlock'
   | 'crown' | 'trophy' | 'list' | 'grid' | 'expand' | 'minimize'
-  | 'arrow_right' | 'sparkle' | 'search' | 'alert' | 'plus' | 'minus' | 'palette';
+  | 'arrow_right' | 'sparkle' | 'search' | 'alert' | 'plus' | 'minus' | 'palette'
+  | 'sun' | 'moon';
 
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
   chevronDown: <path d="M6 9l6 6 6-6" />,
@@ -276,6 +285,8 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
   plus:        <path d="M12 5v14M5 12h14" />,
   minus:       <path d="M5 12h14" />,
   palette:     <><circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12.5" r="1"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c3.31 0 6-2.69 6-6 0-4.96-4.49-9-10-9z"/></>,
+  sun:         <><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></>,
+  moon:        <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />,
 };
 
 // 主題切換清單（與 index.css 中的 :root[data-theme=...] 對應）
@@ -314,10 +325,10 @@ const PILL_SIZES: Record<PillSize, string> = {
   md: 'text-sm px-2.5 py-1',
 };
 
-const Pill = ({ children, tone = 'default', size = 'sm', className = '' }: {
-  children?: React.ReactNode; tone?: PillTone; size?: PillSize; className?: string;
+const Pill = ({ children, tone = 'default', size = 'sm', className = '', style }: {
+  children?: React.ReactNode; tone?: PillTone; size?: PillSize; className?: string; style?: React.CSSProperties;
 }) => (
-  <span className={`inline-flex items-center gap-1 rounded-full font-medium ${PILL_TONES[tone]} ${PILL_SIZES[size]} ${className}`}>
+  <span className={`inline-flex items-center gap-1 rounded-full font-medium ${PILL_TONES[tone]} ${PILL_SIZES[size]} ${className}`} style={style}>
     {children}
   </span>
 );
@@ -494,6 +505,18 @@ const TournamentManager = () => {
   const [showAboutInfo, setShowAboutInfo] = useState(false);
   // 投影模式：'tables' = 桌次表投影、'standings' = 名次表投影、null = 關閉
   const [projectionMode, setProjectionMode] = useState<null | 'tables' | 'standings'>(null);
+  // 投影專用主題：只套在投影 overlay 上，裁判操作介面維持全域主題。
+  // 預設深色——投影機亮度全部用在字上，昏暗禮堂對比最強。
+  const [projTheme, setProjTheme] = useState<'light' | 'dark'>(() => {
+    try { return localStorage.getItem('wgp-proj-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
+  });
+  const toggleProjTheme = () => {
+    setProjTheme(t => {
+      const next = t === 'dark' ? 'light' : 'dark';
+      try { localStorage.setItem('wgp-proj-theme', next); } catch {}
+      return next;
+    });
+  };
   // 投影名次表：自訂競賽名稱（空字串時 fallback 到 gameTitle）
   const [projectionTitle, setProjectionTitle] = useState<string>('');
   // 投影名次表：只顯示前 N 名（null = 全部）
@@ -892,10 +915,10 @@ const handleToggleWithdraw = async (playerNumber) => {
       if (W <= 0 || H <= 0) return;
       const GAP_Y = 8;
       const GAP_X = 24;
-      const ROW_H_EST = 76;   // 估算每張卡的高度（含 padding 與 gap）以推算可塞列數
-      const MAX_ROW_H = 132;  // 上限避免列高過大造成卡片之間被空白拉開
+      const ROW_H_EST = 76;   // 估算每張卡的最小高度（含 padding 與 gap）以推算可塞列數
+      const MAX_ROW_H = 200;  // 列高上限：桌數少時讓卡片長高吃滿垂直空間，字級跟著放大
       const MIN_W = 420;
-      const MAX_W = 960;
+      const MAX_W = 1440;     // 卡片寬上限：投影時盡量吃滿水平空間
 
       // 1) 用 ROW_H_EST 估出單欄能塞幾列，反推欄數（與舊版邏輯相容，避免少桌數時退成 1 欄）
       const rowsPerColEst = Math.max(1, Math.floor((H + GAP_Y) / (ROW_H_EST + GAP_Y)));
@@ -2967,15 +2990,22 @@ const handleFileUpload = (event) => {
     const matchesForRound = matchesByRound[selectedRound] || [];
     const total = matchesForRound.length;
     const nameOf = (num: number) => players.find(p => p.number === num)?.name || '';
-    // 字級上限同時參考卡片寬度與每張卡可用垂直空間：欄數少（卡片寬）+ 列高寬鬆 → 字可以更大
-    const widthCap = tablesCardWidth * 0.06;
-    const heightCap = tablesRowH * 0.45;
-    const nameMaxFont = Math.min(48, Math.max(24, Math.round(Math.min(widthCap, heightCap))));
-    const nameMinFont = Math.max(15, Math.round(nameMaxFont * 0.62));
+    // 字級全部隨列高/卡寬縮放：桌數少 → 卡片大 → 字大，吃滿投影空間
+    // 隊名上限貼近卡片內部可用高度（列高 − py-3 上下 24px，行高 1.15）
+    const widthCap = tablesCardWidth * 0.07;
+    const heightCap = tablesRowH * 0.58;
+    const nameMaxFont = Math.min(80, Math.max(24, Math.round(Math.min(widthCap, heightCap))));
+    // 下限抓上限一半：長隊名（英文全名）優先縮小塞完整，仍塞不下才截斷
+    const nameMinFont = Math.max(15, Math.round(nameMaxFont * 0.5));
+    // 桌次號碼是全場掃視重點，字級比隊名再大一階
+    const tableNumFont = Math.min(88, Math.max(38, Math.round(tablesRowH * 0.5)));
+    const tableLabelFont = Math.max(12, Math.round(tableNumFont * 0.3));
+    const pillFont = Math.min(44, Math.max(20, Math.round(tablesRowH * 0.26)));
+    const vsFont = Math.min(24, Math.max(12, Math.round(tablesRowH * 0.14)));
 
     return (
-      <div className="flex-1 flex flex-col items-center p-8 overflow-hidden min-h-0 standings-stage">
-        <div className="text-center mb-6 flex-shrink-0">
+      <div className="flex-1 flex flex-col items-center px-6 pt-6 pb-5 overflow-hidden min-h-0 standings-stage">
+        <div className="text-center mb-4 flex-shrink-0">
           <div className="text-[10px] tracking-[0.4em] text-[var(--accent)] font-medium mb-2">WGP TOURNAMENT</div>
           <h1 className="text-5xl font-bold tracking-tight">{gameTitle}</h1>
           <div className="mt-2 text-2xl text-[var(--text-secondary)] tracking-wide">第 {selectedRound} 輪 · 桌次表</div>
@@ -2989,7 +3019,7 @@ const handleFileUpload = (event) => {
             className="flex-1 w-full min-h-0 overflow-hidden grid content-center justify-center"
             style={{
               gridTemplateColumns: `repeat(${tablesCols}, ${tablesCardWidth}px)`,
-              gridTemplateRows: `repeat(${tablesRowsPerCol}, auto)`,
+              gridTemplateRows: `repeat(${tablesRowsPerCol}, ${tablesRowH}px)`,
               gridAutoFlow: 'column',
               columnGap: '24px',
               rowGap: '8px',
@@ -2999,57 +3029,63 @@ const handleFileUpload = (event) => {
               const isBye = m.player2 === 0;
               const isOdd = m.table % 2 === 1;
               // 對照排行榜：from-[色/透明度] to-transparent + 同色 border
+              // 透明度/邊框比排行榜濃一級：投影機色彩衰減大，淡色帶會直接消失
               const cardClass = isBye
-                ? 'bg-gradient-to-r from-[oklch(0.85_0.02_250_/_0.20)] to-transparent border-[oklch(0.70_0.02_250_/_0.35)]'
+                ? 'bg-gradient-to-r from-[oklch(0.85_0.02_250_/_0.28)] to-transparent border-[oklch(0.70_0.02_250_/_0.50)]'
                 : isOdd
-                ? 'bg-gradient-to-r from-[oklch(0.78_0.14_85_/_0.22)] to-transparent border-[oklch(0.70_0.15_85_/_0.45)]'   /* 暖琥珀 */
-                : 'bg-gradient-to-r from-[oklch(0.72_0.13_240_/_0.18)] to-transparent border-[oklch(0.58_0.14_240_/_0.42)]'; /* 冷藍 */
+                ? 'bg-gradient-to-r from-[oklch(0.78_0.14_85_/_0.32)] to-transparent border-[oklch(0.70_0.15_85_/_0.65)]'   /* 暖琥珀 */
+                : 'bg-gradient-to-r from-[oklch(0.72_0.13_240_/_0.28)] to-transparent border-[oklch(0.58_0.14_240_/_0.60)]'; /* 冷藍 */
               const numColor = isBye
                 ? 'text-[var(--text-muted)]'
                 : isOdd
-                ? 'text-[oklch(0.55_0.15_85)]'
-                : 'text-[oklch(0.48_0.16_240)]';
+                ? 'text-[var(--proj-table-odd)]'
+                : 'text-[var(--proj-table-even)]';
               const pillColor = isBye
                 ? '!text-[var(--text-secondary)] !font-bold'
                 : '!text-[var(--text-primary)] !font-bold';
               return (
-                <div key={mi} className={`flex items-center gap-4 px-5 py-3 rounded-xl border ${cardClass}`} style={{ width: `${tablesCardWidth}px` }}>
-                  <div className="flex flex-col items-center w-14 flex-shrink-0">
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] leading-none mb-1">桌</div>
-                    <div className={`font-mono-num text-3xl font-extrabold leading-none tabular ${numColor}`}>{isBye ? '—' : m.table}</div>
+                <div key={mi} className={`flex items-center gap-4 px-5 py-3 rounded-xl border-2 h-full ${cardClass}`} style={{ width: `${tablesCardWidth}px` }}>
+                  {/* 「桌」標籤放數字左側而非上方：桌號本身才會與隊名同一條垂直中線 */}
+                  <div className="flex items-center justify-center gap-1.5 flex-shrink-0" style={{ minWidth: `${Math.ceil(tableNumFont * 1.5)}px` }}>
+                    <div className="text-[var(--text-secondary)] leading-none" style={{ fontSize: `${tableLabelFont}px` }}>桌</div>
+                    <div className={`font-mono-num font-extrabold leading-none tabular ${numColor}`} style={{ fontSize: `${tableNumFont}px` }}>{isBye ? '—' : m.table}</div>
                   </div>
                   {isBye ? (
-                    <>
-                      <div className="flex-1 min-w-0 flex items-center gap-2">
-                        <Pill tone="muted" size="sm" className={`w-14 justify-center tabular !text-2xl !px-1 flex-shrink-0 ${pillColor}`}>#{m.player1}</Pill>
+                    /* 與正常卡同樣的左右分欄：隊名佔左半（字級才會跟一般隊伍一致），輪空放對手位置 */
+                    <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Pill tone="muted" size="sm" className={`justify-center tabular !px-2 flex-shrink-0 ${pillColor}`} style={{ fontSize: `${pillFont}px`, minWidth: `${Math.ceil(pillFont * 2.6)}px` }}>#{m.player1}</Pill>
                         <FitText
                           text={nameOf(m.player1)}
                           maxFontPx={nameMaxFont}
                           minFontPx={nameMinFont}
-                          className="flex-1 font-bold text-[var(--text-secondary)]"
+                          className="flex-1 font-extrabold text-[var(--text-secondary)]"
                         />
                       </div>
-                      <Pill tone="muted" size="md">輪空</Pill>
-                    </>
+                      <div className="px-1" style={{ fontSize: `${vsFont}px` }}></div>
+                      <div className="flex items-center min-w-0">
+                        <Pill tone="muted" size="md" style={{ fontSize: `${pillFont}px` }}>輪空</Pill>
+                      </div>
+                    </div>
                   ) : (
                     <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm" className={`w-14 justify-center tabular !text-2xl !px-1 flex-shrink-0 ${pillColor}`}>#{m.player1}</Pill>
+                        <Pill tone="muted" size="sm" className={`justify-center tabular !px-2 flex-shrink-0 ${pillColor}`} style={{ fontSize: `${pillFont}px`, minWidth: `${Math.ceil(pillFont * 2.6)}px` }}>#{m.player1}</Pill>
                         <FitText
                           text={nameOf(m.player1)}
                           maxFontPx={nameMaxFont}
                           minFontPx={nameMinFont}
-                          className="flex-1 font-bold"
+                          className="flex-1 font-extrabold"
                         />
                       </div>
-                      <div className="text-[10px] tracking-[0.3em] text-[var(--text-muted)] font-mono-num font-semibold px-1">VS</div>
+                      <div className="tracking-[0.3em] text-[var(--text-secondary)] font-mono-num font-semibold px-1" style={{ fontSize: `${vsFont}px` }}>VS</div>
                       <div className="flex items-center gap-2 min-w-0">
-                        <Pill tone="muted" size="sm" className={`w-14 justify-center tabular !text-2xl !px-1 flex-shrink-0 ${pillColor}`}>#{m.player2}</Pill>
+                        <Pill tone="muted" size="sm" className={`justify-center tabular !px-2 flex-shrink-0 ${pillColor}`} style={{ fontSize: `${pillFont}px`, minWidth: `${Math.ceil(pillFont * 2.6)}px` }}>#{m.player2}</Pill>
                         <FitText
                           text={nameOf(m.player2)}
                           maxFontPx={nameMaxFont}
                           minFontPx={nameMinFont}
-                          className="flex-1 font-bold"
+                          className="flex-1 font-extrabold"
                         />
                       </div>
                     </div>
@@ -3706,7 +3742,7 @@ const handleFileUpload = (event) => {
 
       {/* ─── 投影模式（桌次表 / 名次表） ─────────────────── */}
       {projectionMode && (
-        <div className="fixed inset-0 z-50 flex flex-col proj-bg">
+        <div className="fixed inset-0 z-50 flex flex-col proj-bg" data-theme={projTheme}>
           <div className="absolute top-4 right-4 z-10 flex gap-2 items-center">
             {projectionMode === 'standings' && (
               <div className="flex items-center gap-2 px-3 h-9 bg-[var(--bg-elevated)] rounded-md border border-[var(--border-default)] text-sm">
@@ -3726,6 +3762,13 @@ const handleFileUpload = (event) => {
                 )}
               </div>
             )}
+            <button
+              onClick={toggleProjTheme}
+              className="btn-ghost px-3 h-9 rounded-md text-sm flex items-center gap-1.5"
+              title="切換投影亮/暗主題（只影響投影畫面）"
+            >
+              <Icon name={projTheme === 'dark' ? 'sun' : 'moon'} className="w-4 h-4"/> {projTheme === 'dark' ? '亮色' : '深色'}
+            </button>
             <button
               onClick={() => {
                 if (document.fullscreenElement) document.exitFullscreen?.();

@@ -8,8 +8,10 @@
  * ──────────────────────────────────────────────────────────────── */
 
 /* 風格 1：淺色極簡（預設） */
+/* 選擇器用 [data-theme] 而非 :root[data-theme]：投影 overlay 可在子樹掛 data-theme
+   套用獨立主題（例如操作介面亮色、投影深色），<html> 上的全域主題行為不變 */
 :root,
-:root[data-theme="light"] {
+[data-theme="light"] {
   --bg-base: #EBEEF2;
   --bg-surface: #FFFFFF;
   --bg-elevated: #FBFBFC;
@@ -49,11 +51,14 @@
   --font-body: "Inter", "Noto Sans TC", system-ui, sans-serif;
   --font-display: "Inter", "Noto Sans TC", system-ui, sans-serif;
   --proj-bg: radial-gradient(ellipse at top, #FFFFFF 0%, #F1F3F6 70%);
+  /* 投影桌次表的奇/偶桌號色：亮底用深色、暗底主題用亮色，維持投影對比 */
+  --proj-table-odd: oklch(0.55 0.15 85);
+  --proj-table-even: oklch(0.48 0.16 240);
   --shadow-card: 0 1px 2px rgba(15, 20, 30, 0.03);
 }
 
 /* 風格 2：深色競技 */
-:root[data-theme="dark"] {
+[data-theme="dark"] {
   --bg-base: #0B0E13;
   --bg-surface: #131820;
   --bg-elevated: #1A2029;
@@ -93,11 +98,13 @@
   --font-body: "Inter", "Noto Sans TC", system-ui, sans-serif;
   --font-display: "Inter", "Noto Sans TC", system-ui, sans-serif;
   --proj-bg: radial-gradient(ellipse at top, #1A2029 0%, #0B0E13 70%);
+  --proj-table-odd: oklch(0.80 0.15 85);
+  --proj-table-even: oklch(0.75 0.15 240);
   --shadow-card: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 
 /* 風格 3：紙本資料 */
-:root[data-theme="paper"] {
+[data-theme="paper"] {
   --bg-base: #FFFFFF;
   --bg-surface: #FFFFFF;
   --bg-elevated: #F5F2EC;
@@ -137,11 +144,13 @@
   --font-body: "Source Sans 3", "Noto Sans TC", system-ui, sans-serif;
   --font-display: "Source Serif 4", "Noto Serif TC", Georgia, serif;
   --proj-bg: #FFFFFF;
+  --proj-table-odd: oklch(0.55 0.15 85);
+  --proj-table-even: oklch(0.48 0.16 240);
   --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.04);
 }
 
 /* 風格 4：午夜寶藍 */
-:root[data-theme="navy"] {
+[data-theme="navy"] {
   --bg-base: #0F1822;
   --bg-surface: #17222F;
   --bg-elevated: #1E2B3B;
@@ -181,6 +190,8 @@
   --font-body: "Inter", "Noto Sans TC", system-ui, sans-serif;
   --font-display: "Inter", "Noto Sans TC", system-ui, sans-serif;
   --proj-bg: radial-gradient(ellipse at top, #1E2B3B 0%, #0F1822 70%);
+  --proj-table-odd: oklch(0.80 0.15 85);
+  --proj-table-even: oklch(0.75 0.15 240);
   --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
@@ -418,7 +429,9 @@ h1, h2, h3, .display { font-family: var(--font-display); }
 /* ────────────────────────────────────────────────────────────────
  * 投影模式
  * ──────────────────────────────────────────────────────────────── */
-.proj-bg { background: var(--proj-bg); }
+/* color 要在這裡重新宣告：body 的 color 是用全域主題算好的「值」往下繼承，
+   投影 overlay 換了 data-theme 變數後必須重新解析一次才會跟著換色 */
+.proj-bg { background: var(--proj-bg); color: var(--text-primary); }
 .standings-stage {
   background:
     radial-gradient(circle at 20% 0%, oklch(0.62 0.17 50 / 0.06), transparent 50%),
