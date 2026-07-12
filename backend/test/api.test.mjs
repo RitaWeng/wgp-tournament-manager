@@ -251,6 +251,16 @@ try {
         assert.deepEqual([t2.result, t2.version], [2, 1]); // 一次到位
     });
 
+    await t('results 附帶各輪鎖定狀態（P0.1 無狀態對帳）：lock/unlock 反映於 rounds', async () => {
+        // 上個測項結束時第 1 輪為 locked
+        const j1 = await (await api(`/events/${eventId}/results`, { token: adminToken })).json();
+        assert.deepEqual(j1.rounds, [{ round_no: 1, status: 'locked' }]);
+        // 解鎖後 rounds 反映 open（下個 reject 測項本就預期第 1 輪開放，先解無妨）
+        await api(`/events/${eventId}/rounds/1/unlock`, { method: 'POST', token: adminToken });
+        const j2 = await (await api(`/events/${eventId}/results`, { token: adminToken })).json();
+        assert.deepEqual(j2.rounds, [{ round_no: 1, status: 'open' }]);
+    });
+
     await t('拒絕採計：reject 後裁判頁標示、再更正即解除、過時版本 409、權限分離', async () => {
         // 前一個測項讓第 1 輪停在 locked，先解鎖（reject/更正都是開放輪次的情境）
         await api(`/events/${eventId}/rounds/1/unlock`, { method: 'POST', token: adminToken });

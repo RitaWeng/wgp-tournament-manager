@@ -34,6 +34,11 @@ export type TableStatusRow = {
     device_change_count: number;
 };
 
+// 後端各輪鎖定狀態（隨 results 輪詢一併回傳），供主控端無狀態鎖定對帳
+export type RoundStatusRow = { round_no: number; status: 'open' | 'locked' };
+
+export type ResultsResponse = { results: JudgeResultRow[]; rounds: RoundStatusRow[] };
+
 const STORAGE_KEY = 'wgpOnlineSync';
 
 export function loadSyncConfig(): SyncConfig | null {
@@ -110,12 +115,16 @@ export function unlockRoundRemote(cfg: SyncConfig, roundNo: number): Promise<any
     return call(cfg.apiBase, `/events/${cfg.eventId}/rounds/${roundNo}/unlock`, { method: 'POST', token: cfg.adminToken });
 }
 
-export async function fetchResults(cfg: SyncConfig): Promise<JudgeResultRow[]> {
+export async function fetchResults(cfg: SyncConfig): Promise<ResultsResponse> {
     const r = await call(cfg.apiBase, `/events/${cfg.eventId}/results`, { token: cfg.adminToken });
-    return r.results.map((row: any) => ({
-        ...row,
-        groups: row.groups_json ? JSON.parse(row.groups_json) : null,
-    }));
+    return {
+        results: r.results.map((row: any) => ({
+            ...row,
+            groups: row.groups_json ? JSON.parse(row.groups_json) : null,
+        })),
+        // 舊版後端不回 rounds（部署落差）→ 視為空集合，對帳只做 lock 方向、不誤發 unlock
+        rounds: Array.isArray(r.rounds) ? r.rounds : [],
+    };
 }
 
 export async function fetchTablesStatus(cfg: SyncConfig): Promise<TableStatusRow[]> {

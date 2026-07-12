@@ -1335,8 +1335,11 @@ const handleToggleWithdraw = async (playerNumber) => {
     setScoredRounds(nextScored);
 
     // 線上模式：算分即同步鎖定該輪，伺服器拒收裁判再提交（規劃 §5）。
-    // 走對帳而非單次 lock：推送失敗會由輪詢自動重試，不再靜默錯位（docs/online-score-sync-drift.md S2）
-    if (onlineCfg) reconcileRoundLocks(onlineCfg, nextScored);
+    // 立即推送求低延遲；失敗由輪詢的無狀態對帳在 ≤4 秒內自動補鎖（docs/online-score-sync-drift.md S2）
+    if (onlineCfg) {
+      onlineSync.lockRound(onlineCfg, currentRound)
+        .catch(e => message.warning(`線上鎖定第 ${currentRound} 輪失敗（${e.message}），將自動重試`));
+    }
 
     setPlayers(playersWithAuxScores);
   };
@@ -2081,12 +2084,12 @@ const handleFileUpload = (event) => {
     setMatches(matchesByRound[round] || []);
     setIsPairingButtonDisabled(true); // 禁止重新抓對，直到重新算分
 
-    // 線上模式：解除鎖定同步到後端，裁判端恢復可更正。走對帳（推送失敗自動重試），
-    // 避免「主控端已解鎖、後端仍鎖」的反向錯位（docs/online-score-sync-drift.md S4）。
-    // 明確把被解鎖輪次補進「後端已知」集合：重載後快取雖空，仍能正確送出 unlock（Codex review）
+    // 線上模式：解除鎖定同步到後端，裁判端恢復可更正。立即推送求低延遲；
+    // 失敗時警示（F2）並由輪詢的無狀態對帳自動補送——對帳以後端回報的各輪 status 為準，
+    // 重載後也能看見「後端 locked、本機未算分」而自癒（docs/online-score-sync-drift.md §7 F1/S4）
     if (onlineCfg) {
-      backendKnownRef.current.add(round);
-      reconcileRoundLocks(onlineCfg, nextScored);
+      onlineSync.unlockRoundRemote(onlineCfg, round)
+        .catch(e => message.warning(`線上解除鎖定第 ${round} 輪失敗（${e.message}），將自動重試；成功前裁判端仍被擋`));
     }
   };
 
@@ -2202,45 +2205,43 @@ const handleFileUpload = (event) => {
   };
   processJudgeResultsRef.current = processJudgeResults;
 
-  // ── P0 鎖定狀態對帳（docs/online-score-sync-drift.md，修 S1/S2/S3/S4）──
-  // 後端鎖定狀態不保證等於本機 scoredRounds（先算分才建賽事、lock/unlock 推送失敗、
-  // 頁面重載後未對帳）。以本機為權威，在建立賽事後、算分/解鎖後、每次輪詢時，把後端
-  // 每個輪次的 lock 狀態校正到「本機已算分 ⇔ locked」。後端 lock/unlock 為冪等 upsert，
-  // 重複推送無副作用；失敗留待下次輪詢重試，成功前面板顯示「鎖定同步中」。
-  const lockReconcileRef = useRef<Map<number, 'locked' | 'open'>>(new Map());
-  // 「後端已知的輪次」集合：驅動 unlock 方向，使解鎖能跨 session 正確送達。
-  // 只裝「曾被本機鎖定/解鎖過」的輪次（算分時經 scored 帶入、解鎖時由 unlockRound 明確加入），
-  // 不會替尚未發佈的當前輪在後端造出幽靈 round。頁面重載後 lockReconcileRef 快取雖清空，
-  // 但 unlockRound 會把被解鎖輪次補進來，避免「本機已解鎖、後端仍鎖」的漏送（Codex review）。
-  const backendKnownRef = useRef<Set<number>>(new Set());
+  // ── P0.1 鎖定狀態無狀態對帳（docs/online-score-sync-drift.md §3 P0、§7 P0.1；修 S1–S4、F1/F2/F5）──
+  // 以本機 scoredRounds 為權威：每次成績輪詢後端會一併回傳各輪 status（rounds），
+  // 逐輪 diff「後端 status ↔ 本機 desired（已算分 ⇔ locked）」，只推送不一致者。
+  // 不維護任何跨呼叫的客端狀態鏡像——P0 初版的 confirmed Map＋known Set 在重載後失憶，
+  // 造成「解鎖失敗後重載 → 後端永久 locked」（F1）；改讀後端真實狀態後，重載後首次輪詢即自癒。
+  // 後端 lock/unlock 為冪等 upsert，重複推送無副作用；推送失敗的輪次進 lockSyncPending
+  // （lock 與 unlock 方向都涵蓋，F2），面板顯示「鎖定同步中」、下次輪詢自動重試。
   const reconcilingRef = useRef(false);
-  const reconcileRoundLocks = async (cfg: onlineSync.SyncConfig, scored: number[]) => {
+  const reconcileRoundLocks = async (
+    cfg: onlineSync.SyncConfig, scored: number[], backendRounds: onlineSync.RoundStatusRow[],
+  ) => {
     if (reconcilingRef.current) return;        // 前一輪對帳（最長 8 秒逾時）未結束就跳過，避免重入
     reconcilingRef.current = true;
-    const confirmed = lockReconcileRef.current;
-    const known = backendKnownRef.current;
-    scored.forEach(r => known.add(r));         // 已算分輪次必然已鎖在後端，一律納入已知集合
     try {
-      // 對每個後端已知輪次：本機已算分 ⇔ 後端 locked，否則 open；狀態不符才推送，失敗留待重試
-      for (const r of Array.from(known).sort((a, b) => a - b)) {
-        const desired: 'locked' | 'open' = scored.includes(r) ? 'locked' : 'open';
-        if (confirmed.get(r) === desired) continue;   // 已確認同步，省一次請求
-        try {
-          if (desired === 'locked') await onlineSync.lockRound(cfg, r);
-          else await onlineSync.unlockRoundRemote(cfg, r);
-          confirmed.set(r, desired);
-        } catch { /* 留待下次輪詢重試 */ }
+      const scoredSet = new Set(Array.isArray(scored) ? scored : []);
+      const status = new Map(backendRounds.map(r => [r.round_no, r.status]));
+      // 該鎖未鎖：本機已算分、後端非 locked（含後端還沒有該輪 row 的 S1 情形，upsert 會補建）
+      const toLock = [...scoredSet].filter(r => status.get(r) !== 'locked');
+      // 該解未解：後端 locked、本機未算分（F1 的自癒路徑：重載後第一次輪詢就會走到這裡）
+      const toUnlock = [...status.keys()].filter(r => status.get(r) === 'locked' && !scoredSet.has(r));
+      const pending: number[] = [];
+      for (const r of toLock) {
+        try { await onlineSync.lockRound(cfg, r); } catch { pending.push(r); }
       }
+      for (const r of toUnlock) {
+        try { await onlineSync.unlockRoundRemote(cfg, r); } catch { pending.push(r); }
+      }
+      pending.sort((a, b) => a - b);
+      setLockSyncPending(prev =>
+        prev.length === pending.length && prev.every((v, i) => v === pending[i]) ? prev : pending);
     } finally {
       reconcilingRef.current = false;
     }
-    const pending = scored.filter(r => confirmed.get(r) !== 'locked');
-    setLockSyncPending(prev =>
-      prev.length === pending.length && prev.every((v, i) => v === pending[i]) ? prev : pending);
   };
   // 每次 render 重新綁定，讓輪詢閉包吃到最新的 onlineCfg / scoredRounds
-  const reconcileLocksRef = useRef<() => Promise<void>>();
-  reconcileLocksRef.current = async () => { if (onlineCfg) await reconcileRoundLocks(onlineCfg, scoredRounds); };
+  const reconcileLocksRef = useRef<(rounds: onlineSync.RoundStatusRow[]) => Promise<void>>();
+  reconcileLocksRef.current = async (rounds) => { if (onlineCfg) await reconcileRoundLocks(onlineCfg, scoredRounds, rounds); };
 
   // 成績輪詢（4 秒；規劃 §2 規模下輪詢已足夠）
   useEffect(() => {
@@ -2248,12 +2249,12 @@ const handleFileUpload = (event) => {
     let cancelled = false;
     const tick = async () => {
       try {
-        const rows = await onlineSync.fetchResults(onlineCfg);
+        const { results: rows, rounds } = await onlineSync.fetchResults(onlineCfg);
         if (cancelled) return;
         setOnlineError(null);
         setOnlineLastSync(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
         await processJudgeResultsRef.current?.(rows);
-        await reconcileLocksRef.current?.();   // 每次輪詢順帶把後端鎖定狀態校正到本機權威
+        await reconcileLocksRef.current?.(rounds);   // 每次輪詢以後端回報的各輪 status 對帳到本機權威
       } catch (e: any) {
         if (!cancelled) setOnlineError(e.message === 'unauthorized' ? '賽事已結束或憑證失效' : `連線失敗：${e.message}`);
       }
@@ -2289,11 +2290,8 @@ const handleFileUpload = (event) => {
       onlineSync.saveSyncConfig(cfg);
       setOnlineCfg(cfg);
       setJudgeReports({});
-      // 新賽事：清空對帳快取與已知集合，並把「建立賽事前已在本機算分鎖定」的輪次立即鎖到
-      // 後端，否則後端該輪為 open、裁判送出的更正會被靜默忽略（docs/online-score-sync-drift.md S1）
-      lockReconcileRef.current = new Map();
-      backendKnownRef.current = new Set();
-      reconcileRoundLocks(cfg, scoredRounds);
+      // 「建立賽事前已在本機算分鎖定」的輪次（S1）由成績輪詢的無狀態對帳同步：
+      // setOnlineCfg 觸發輪詢 effect 立即 tick，首次對帳就會補鎖，毋須在此另行推送
       try { localStorage.setItem('wgpOnlineSetupKey', setupKey); } catch { /* 存不進去下次再輸入 */ }
       message.success(`線上賽事已建立（${tables} 桌）。請按「列印 QR 卡」交給計分台保管，裁判報到時當面掃碼。`);
     } catch (e: any) {
@@ -2321,10 +2319,10 @@ const handleFileUpload = (event) => {
     try {
       await onlineSync.publishPairings(onlineCfg, currentRound, pairings);
       // 發佈會把該輪 status 重設為 open；若本輪本機已算分（少見，但如重發舊輪），
-      // 立即補鎖回來以免出現「已鎖輪次在後端變 open」的空窗（docs/online-score-sync-drift.md）
+      // 立即補鎖回來以免出現「已鎖輪次在後端變 open」的空窗（docs/online-score-sync-drift.md）；
+      // 失敗由輪詢對帳 ≤4 秒內補上
       if (scoredRounds.includes(currentRound)) {
-        lockReconcileRef.current.delete(currentRound);
-        reconcileRoundLocks(onlineCfg, scoredRounds);
+        onlineSync.lockRound(onlineCfg, currentRound).catch(() => { /* 留待輪詢對帳補鎖 */ });
       }
       // 重發同一輪時伺服器 pairings 整輪刪除重建、version 歸 0；本輪已處理紀錄一併清掉，
       // 否則舊 version 會在 processJudgeResults 把新配對的回報永遠擋掉
@@ -2368,8 +2366,6 @@ const handleFileUpload = (event) => {
     setOnlineCfg(null);
     setTablesStatus(null);
     setJudgeReports({});
-    lockReconcileRef.current = new Map();
-    backendKnownRef.current = new Set();
     setLockSyncPending([]);
   };
 
@@ -3677,7 +3673,7 @@ const handleFileUpload = (event) => {
                             <span className="text-xs text-[var(--text-muted)] tabular">上次同步 {onlineLastSync}</span>
                           )}
                           {lockSyncPending.length > 0 && (
-                            <span className="text-xs text-[var(--warn)]" title="已算分輪次的鎖定尚未同步到後端，將自動重試">
+                            <span className="text-xs text-[var(--warn)]" title="鎖定/解鎖狀態尚未同步到後端，將自動重試">
                               ⟳ 鎖定同步中（R{lockSyncPending.join('、R')}）
                             </span>
                           )}

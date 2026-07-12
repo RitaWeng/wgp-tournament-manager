@@ -221,6 +221,51 @@ F1/F2/F5 的共同根因（code-review altitude 角度亦指出）：**後端沒
 5. **F2 立即止血（不等 P0.1）**：可先在 unlock 推送失敗時加回一則 warning，或把 unlock 方向
    也納入 `lockSyncPending`（`known` 中 desired=open 但 confirmed≠open 者）。
 
+### P0.1 實作進度（2026-07-12 session 交接，⚠ 程式碼已寫完但尚未驗證）
+
+**已完成（都在 working tree，尚未 commit 時見 git status；若已 commit 見 git log）**：
+
+1. **後端** `backend/src/admin.ts` — `GET /events/:id/results` 以 `DB.batch` 一併查
+   `rounds` 表，回應多帶 `rounds: [{round_no, status}]`。
+2. **前端** `tournament-menager/src/lib/sync.ts` — 新型別 `RoundStatusRow`／`ResultsResponse`；
+   `fetchResults` 改回傳 `{ results, rounds }`（舊後端不回 rounds 時容錯為 `[]`，
+   此時對帳只做 lock 方向、不會誤發 unlock）。
+3. **前端** `TournamentManager.tsx` — `reconcileRoundLocks(cfg, scored, backendRounds)`
+   改**無狀態**：拿後端 rounds 與本機 scoredRounds 逐輪 diff，`toLock`（已算分但後端非
+   locked，含 S1 的 upsert 補建）＋ `toUnlock`（後端 locked 但本機未算分 = F1 自癒路徑）；
+   推送失敗者進 `lockSyncPending`（**兩個方向都涵蓋 → F2 修復**）。
+   已刪除 `lockReconcileRef`／`backendKnownRef` 及三處 reset（F5 隨之消失）。
+   - `calculateScores`／`unlockRound` 改回**直接推送**（低延遲）＋失敗 `message.warning`
+     （F2 立即止血）＋輪詢對帳 ≤4s 補送；unlock 警語「將自動重試；成功前裁判端仍被擋」。
+   - `createOnlineEvent` 不再顯式對帳：setOnlineCfg 觸發輪詢 effect 立即 tick，首次對帳補鎖（S1）。
+   - 發佈已算分輪次後的補鎖改直接 `lockRound`＋catch（失敗留給輪詢）。
+   - 輪詢 tick 改 `const { results: rows, rounds } = await fetchResults(...)`，
+     `reconcileLocksRef.current?.(rounds)`。
+   - 面板 chip title 改「鎖定/解鎖狀態尚未同步到後端，將自動重試」。
+4. **後端測試** `backend/test/api.test.mjs` — 「主控端收成績」後新增一測項：
+   results 附帶 rounds、lock/unlock 反映於 status。
+5. `npx tsc --noEmit` 已過；`grep lockReconcileRef|backendKnownRef` 無殘留。
+
+**下個 session 必做（本次 5h 額度用罄，未及執行）**：
+
+1. `cd backend && npm test` — 跑後端整合測試（含新測項）。
+2. `cd tournament-menager && npm run build` ＋ `npm test`（前端 fixture 回歸）。
+3. `node backend/test/e2e-online.mjs` — 既有 e2e 全流程回歸（含鎖定同步步驟）。
+4. **補 F1 回歸測試（尚未寫）**：建議新檔 `backend/test/e2e-lock-reconcile.mjs`，情境：
+   建賽 → 抓對 → 手動登錄全部 → 算分（驗後端 R1=locked，可用新 rounds 欄位斷言）→
+   `page.route('**/rounds/1/unlock', r => r.abort())` → 按「解除鎖定」＋確認 →
+   驗後端仍 locked → **reload（保持 abort）** → 驗 chip「⟳ 鎖定同步中」出現（F2）→
+   unroute → ≤10s 內驗後端 R1=open（F1 自癒）、chip 消失。
+   斷言後端狀態可直接以 localStorage 的 `wgpOnlineSync` cfg 打 `GET /events/:id/results` 讀 `rounds`。
+   注意 §6 步驟 6 的教訓：`addInitScript` 會在 reload 重跑，seed localStorage 要「空才 seed」。
+5. 全綠後更新本節為「✅ 已驗證」、更新 §5 進度與 §7 表格（F1/F2/F5 → 已修），commit。
+
+**設計取捨備忘**：F3（幽靈鎖定輪次）**維持原樣未修**——scored 但後端無 row 的輪次仍會
+upsert 出無 pairing 的 locked row，因為這正是 S1 的保護行為（裁判端看到鎖定、409 擋更正），
+且 S1 既有 e2e 斷言依賴它；要修 F3 需連動改 S1 策略，留 P1 再議。F4 大幅緩解：立即推送
+不再走 reconcile（不會被重入守衛吞掉）、對帳參數逐次傳入（無舊閉包反向）；殘餘為
+「in-flight 對帳用舊 scored 短暫回鎖剛解鎖的輪次」，≤4s 由下次輪詢自癒，屬可接受收斂。
+
 ### 本次 code-review 的重現/驗證方式（P0.1 沿用）
 
 - 本機後端：`cd backend && npm run db:local && npx wrangler dev --port 8787`

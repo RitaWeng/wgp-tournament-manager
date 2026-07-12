@@ -140,17 +140,24 @@ admin.post('/events/:id/rounds/:n/tables/:t/reject', requireAdmin, async (c) => 
 });
 
 // 收裁判回報：規模小（每輪十幾桌），直接回傳全部已回報配對，主控端冪等合併；
-// ?since=<ISO> 可做增量（比較 submitted_at）
+// ?since=<ISO> 可做增量（比較 submitted_at）。
+// 回應另附各輪鎖定狀態 rounds，供主控端做無狀態鎖定對帳（本機 scoredRounds 為權威，
+// 逐輪 diff 後端 status、只推送不一致者）——見 docs/online-score-sync-drift.md §7 P0.1
 admin.get('/events/:id/results', requireAdmin, async (c) => {
     const eventId = c.get('eventId');
     const since = c.req.query('since') || '';
-    const rows = await c.env.DB.prepare(
-        `SELECT round_no, table_no, player1_id, player2_id, result, groups_json, version, submitted_at
-           FROM pairings
-          WHERE event_id = ? AND result IS NOT NULL AND submitted_at > ?
-          ORDER BY submitted_at`
-    ).bind(eventId, since).all();
-    return c.json({ serverTime: new Date().toISOString(), results: rows.results });
+    const [rows, rounds] = await c.env.DB.batch([
+        c.env.DB.prepare(
+            `SELECT round_no, table_no, player1_id, player2_id, result, groups_json, version, submitted_at
+               FROM pairings
+              WHERE event_id = ? AND result IS NOT NULL AND submitted_at > ?
+              ORDER BY submitted_at`
+        ).bind(eventId, since),
+        c.env.DB.prepare(
+            'SELECT round_no, status FROM rounds WHERE event_id = ? ORDER BY round_no'
+        ).bind(eventId),
+    ]);
+    return c.json({ serverTime: new Date().toISOString(), results: rows.results, rounds: rounds.results });
 });
 
 // 各桌狀態（開賽前檢查 + 全程監看）：last_seen、目前 device、device 變化次數
