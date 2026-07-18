@@ -61,6 +61,17 @@ async function applySchema(persistDir) {
     });
 }
 
+// 對 persist 目錄直接下 SQL（限伺服器停止時，避免與 workerd 搶 SQLite 檔案鎖）
+async function d1Command(persistDir, sql) {
+    await new Promise((resolve, reject) => {
+        const p = spawn(process.execPath, [
+            WRANGLER_JS, 'd1', 'execute', 'wgp_score_relay', '--local',
+            '--command', sql, '--persist-to', persistDir,
+        ], { cwd: BACKEND_DIR, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, stdio: 'ignore' });
+        p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`d1 execute exit ${code}`))));
+    });
+}
+
 // 帶 Origin 的 helper（模擬瀏覽器跨站呼叫）
 const api = (path, { method = 'GET', token, body, device, key } = {}) =>
     fetch(`${BASE}${path}`, {
@@ -401,6 +412,55 @@ try {
     // Windows 上 workerd 釋放檔案較慢，加 retry
     rmSync(persist, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
     rmSync(persist2, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+}
+
+// ── retention：7 天 scheduled 雙保險（wrangler --test-scheduled 觸發 /__scheduled）──
+console.log('▶ Retention（7 天 scheduled 雙保險）');
+const persist3 = mkdtempSync(join(tmpdir(), 'wgp-relay-ret-'));
+await applySchema(persist3);
+server = startServer(persist3, ['--var', `SETUP_KEY:${SETUP_KEY}`, '--test-scheduled']);
+try {
+    await waitReady();
+
+    let expired, edge, fresh;
+    await t('建立三個賽事（過期/邊界/新建）', async () => {
+        const mk = async (name) => {
+            const r = await api('/events', { method: 'POST', key: SETUP_KEY, body: { name, tables: 1 } });
+            assert.equal(r.status, 200);
+            return r.json();
+        };
+        expired = await mk('ret-expired');
+        edge = await mk('ret-edge');
+        fresh = await mk('ret-fresh');
+    });
+
+    // 回填 created_at 模擬賽事年齡（伺服器停止時執行）：
+    //   expired = 7 天又 30 分前 → 該刪。
+    //   edge = 6 天 23 小時 50 分前 → 未滿 7 天、不該刪；它與 cutoff 同一 UTC 日的較晚
+    //   時刻——舊版拿 toISOString() 當 cutoff（'T' > ' '）的 TEXT 比較會誤刪，此為回歸測項。
+    //   （僅當測試起跑於 UTC 23:50–24:00 時 edge 會跨到次日、暫失回歸敏感度，但不會誤判失敗；
+    //   +10 分鐘同時給「回填到觸發 scheduled」留足時距，不會讓 edge 真的滿 7 天）
+    stopServer(server);
+    await new Promise((r) => setTimeout(r, 1500));
+    await d1Command(persist3, `UPDATE events SET created_at = datetime('now', '-7 days', '-30 minutes') WHERE id = '${expired.eventId}'`);
+    await d1Command(persist3, `UPDATE events SET created_at = datetime('now', '-7 days', '+10 minutes') WHERE id = '${edge.eventId}'`);
+    server = startServer(persist3, ['--var', `SETUP_KEY:${SETUP_KEY}`, '--test-scheduled']);
+    await waitReady();
+
+    await t('scheduled 只刪滿 7 天的賽事（同日較晚時刻不誤刪）', async () => {
+        const r = await fetch(`${BASE}/__scheduled?cron=17+19+*+*+*`);
+        assert.ok(r.ok, `__scheduled 觸發失敗（HTTP ${r.status}）`);
+        assert.equal((await api(`/events/${expired.eventId}/results`, { token: expired.adminToken })).status, 401,
+            '滿 7 天的賽事應被刪除（token 失效）');
+        assert.equal((await api(`/events/${edge.eventId}/results`, { token: edge.adminToken })).status, 200,
+            '未滿 7 天（與 cutoff 同日較晚時刻）不應被誤刪');
+        assert.equal((await api(`/events/${fresh.eventId}/results`, { token: fresh.adminToken })).status, 200,
+            '新建賽事不應被刪除');
+    });
+} finally {
+    stopServer(server);
+    await new Promise((r) => setTimeout(r, 1000));
+    rmSync(persist3, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
 }
 
 console.log(`\n${failures.length === 0 ? `ALL PASS (${passed} tests)` : `${failures.length} FAILED: ${failures.join(', ')}`}`);

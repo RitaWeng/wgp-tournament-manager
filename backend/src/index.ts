@@ -61,9 +61,12 @@ export default {
     // 7 天 retention 雙保險（第 3 節）：主控端「結束賽事」是主要刪除路徑，
     // 這裡清掉忘了關的賽事。cron 排程見 wrangler.toml。
     async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
-        const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-        const stale = await env.DB.prepare('SELECT id FROM events WHERE created_at < ?')
-            .bind(cutoff).all<{ id: string }>();
+        // cutoff 必須與 created_at 的預設格式（datetime('now')，空格分隔）一致：
+        // TEXT 比較下 ISO 的 'T' > ' '，拿 toISOString() 當 cutoff 會把同一 UTC 日
+        // 但較晚時刻的賽事誤判為過期，提早最多近 5 小時刪除
+        const stale = await env.DB.prepare(
+            "SELECT id FROM events WHERE created_at < datetime('now', '-7 days')"
+        ).all<{ id: string }>();
         for (const { id } of stale.results) {
             await env.DB.batch([
                 env.DB.prepare('DELETE FROM pairings WHERE event_id = ?').bind(id),
