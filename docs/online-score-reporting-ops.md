@@ -105,6 +105,10 @@ npm test          # 28 項整合測試（Windows/Mac 都能跑）
 npm run deploy    # 重新部署（需已 wrangler login）
 ```
 
+**前後端一起改時，部署順序務必後端先上**：P0.1 之後主控端靠 results 回應的 `rounds`
+做鎖定對帳；新前端配舊後端（不回 `rounds`）時會退化成「每 4 秒重複推一次 lock」——
+冪等無害，但落差拖長可能撞限流分桶（見 drift 文件 §7 設計後果補記）。
+
 schema 有改動時需另外 `npx wrangler d1 execute wgp_score_relay --remote --file=./schema.sql`
 （現有 schema 全部 `IF NOT EXISTS`，重跑安全；但改既有欄位需自行寫 migration）。
 

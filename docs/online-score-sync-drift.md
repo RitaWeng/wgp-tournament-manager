@@ -221,7 +221,7 @@ F1/F2/F5 的共同根因（code-review altitude 角度亦指出）：**後端沒
 5. **F2 立即止血（不等 P0.1）**：可先在 unlock 推送失敗時加回一則 warning，或把 unlock 方向
    也納入 `lockSyncPending`（`known` 中 desired=open 但 confirmed≠open 者）。
 
-### P0.1 實作進度（2026-07-12 session 交接，⚠ 程式碼已寫完但尚未驗證）
+### P0.1 實作進度（2026-07-12 交接；2026-07-18 存量驗證 1–3 全綠，餘 F1 回歸測試未寫）
 
 **已完成（都在 working tree，尚未 commit 時見 git status；若已 commit 見 git log）**：
 
@@ -246,16 +246,20 @@ F1/F2/F5 的共同根因（code-review altitude 角度亦指出）：**後端沒
    results 附帶 rounds、lock/unlock 反映於 status。
 5. `npx tsc --noEmit` 已過；`grep lockReconcileRef|backendKnownRef` 無殘留。
 
-**下個 session 必做（本次 5h 額度用罄，未及執行）**：
+**驗證清單（1–3 於 2026-07-18 執行，全綠）**：
 
-1. `cd backend && npm test` — 跑後端整合測試（含新測項）。
-2. `cd tournament-menager && npm run build` ＋ `npm test`（前端 fixture 回歸）。
-3. `node backend/test/e2e-online.mjs` — 既有 e2e 全流程回歸（含鎖定同步步驟）。
-4. **補 F1 回歸測試（尚未寫）**：建議新檔 `backend/test/e2e-lock-reconcile.mjs`，情境：
-   建賽 → 抓對 → 手動登錄全部 → 算分（驗後端 R1=locked，可用新 rounds 欄位斷言）→
+1. ✅ `cd backend && npm test` — ALL PASS（29 項，含 P0.1 新測項
+   「results 附帶各輪鎖定狀態：lock/unlock 反映於 rounds」）。
+2. ✅ `cd tournament-menager && npm run build` ＋ `npm test` — build 過（僅既有 bundle
+   大小警告）；全部 fixture 回歸通過。
+3. ✅ `node backend/test/e2e-online.mjs` — ALL PASS（18 步，含「算分 → 鎖定同步」、
+   後端掛掉退回手動、結束賽事），三 context 無 pageerror。
+4. **補 F1 回歸測試（尚未寫；2026-07-18 已瘦身）**：**併入既有 `backend/test/e2e-online.mjs`
+   加一段情境**（不開新檔，省一份腳手架），且**只驗後端狀態自癒、不驗 chip UI**——chip
+   出現/消失的斷言最脆弱、價值最低，F2 靠人工目視即可。情境：
+   算分（驗後端 R1=locked，用新 rounds 欄位斷言）→
    `page.route('**/rounds/1/unlock', r => r.abort())` → 按「解除鎖定」＋確認 →
-   驗後端仍 locked → **reload（保持 abort）** → 驗 chip「⟳ 鎖定同步中」出現（F2）→
-   unroute → ≤10s 內驗後端 R1=open（F1 自癒）、chip 消失。
+   驗後端仍 locked → **reload（保持 abort）** → unroute → ≤10s 內驗後端 R1=open（F1 自癒）。
    斷言後端狀態可直接以 localStorage 的 `wgpOnlineSync` cfg 打 `GET /events/:id/results` 讀 `rounds`。
    注意 §6 步驟 6 的教訓：`addInitScript` 會在 reload 重跑，seed localStorage 要「空才 seed」。
 5. 全綠後更新本節為「✅ 已驗證」、更新 §5 進度與 §7 表格（F1/F2/F5 → 已修），commit。
@@ -265,6 +269,16 @@ upsert 出無 pairing 的 locked row，因為這正是 S1 的保護行為（裁�
 且 S1 既有 e2e 斷言依賴它；要修 F3 需連動改 S1 策略，留 P1 再議。F4 大幅緩解：立即推送
 不再走 reconcile（不會被重入守衛吞掉）、對帳參數逐次傳入（無舊閉包反向）；殘餘為
 「in-flight 對帳用舊 scored 短暫回鎖剛解鎖的輪次」，≤4s 由下次輪詢自癒，屬可接受收斂。
+
+**P0.1 設計後果補記（2026-07-18 評估）**——兩項已知行為，非缺陷，需知悉：
+
+- **舊後端容錯路徑會變吵**：`fetchResults` 對不回 `rounds` 的舊後端容錯為 `[]`，此時
+  `toLock`＝全部已算分輪次、**每 4 秒重複推一次 lock**（冪等無害，但前後端部署落差拖長
+  可能撞限流分桶）。**部署順序務必後端先上**；已同步記於 ops 手冊。
+- **「本機為權威」由被動轉主動**：P0 時代的失效模式是「該解鎖而永不解鎖」（F1）；P0.1
+  之後反轉——任何持 admin token 但本機狀態較舊的主控端（舊備份還原、第二台裝置手動輸入
+  同組憑證）會**主動解鎖後端已鎖的輪次**。與既定權威模型（`d50f990`）一致、單一主控裝置
+  前提下即正確，但屬行為反轉，異地接手主控時應以最新匯出檔還原後再連線。
 
 ### 本次 code-review 的重現/驗證方式（P0.1 沿用）
 
