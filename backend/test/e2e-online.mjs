@@ -291,6 +291,111 @@ async function judgeSubmitFlow(page) {
     step('⚠️', '拒絕採計通知', '略過（revision 警示未跳窗）');
   }
 
+  // ── B2 回歸：拒絕採計決定持久化——reload 後同一筆 revision 不重跳確認窗 ──
+  if (rejectedByOperator) {
+    const savedReports = await M.evaluate(() =>
+      JSON.parse(localStorage.getItem('tournamentManagerState') || '{}').judgeReports || null);
+    const dismissedSaved = !!savedReports && Object.values(savedReports).some(v => v.dismissed);
+    await M.reload();
+    await M.locator('button', { hasText: '線上回報' }).click(); // reload 重置面板，後續步驟依賴桌況 chips
+    await wait(10000); // ≥2 個輪詢週期；舊版會在此對同一筆 revision 重跳「裁判回報更正」
+    const reprompt = await M.getByRole('button', { name: '維持現狀' }).count();
+    const b2ok = dismissedSaved && reprompt === 0;
+    step(b2ok ? '✅' : '❌', 'B2 回歸：拒絕採計持久化',
+      b2ok ? 'dismissed 已入 localStorage；reload 後未重跳確認窗'
+           : `dismissedSaved=${dismissedSaved} reprompt=${reprompt}`);
+  } else {
+    step('⚠️', 'B2 回歸：拒絕採計持久化', '略過（revision 警示未跳窗）');
+  }
+
+  // ── S7 回歸：鎖定競態的更正不再無聲消失（守衛 A 可見化，drift doc §3 P1）──
+  // 模擬：lock 推送被斷（後端仍 open）→ M 算分鎖定 R2 → P2 合法送出更正（HTTP 200）
+  // → M 輪詢丟棄但留「更正未採計」標記 → 恢復連線自動補鎖 → 由標記解鎖 → 正常採計確認
+  await M.route('**/rounds/2/lock', r => r.abort());
+  for (let i = 0; i < 20; i++) {                       // R2 其餘桌手動登錄後算分
+    const sides = M.locator('div[title="點擊登錄勝"]');
+    if (!(await sides.count())) break;
+    await sides.first().click(); await wait(100);
+  }
+  await M.locator('button').filter({ hasText: '算分' }).first().click();
+  await dismissAlerts(M);
+  const s7Backend = (await roundsStatus()).get(2);     // lock 全被 abort → 後端應仍 open
+  await P2.getByRole('button', { name: '更正結果' }).click();
+  await P2.waitForSelector('text=更正中');
+  await judgeFillGroups(P2, [2, 2, 2, 1, 2], []);      // 1:4 翻勝方（≠ 本地登錄的側1）
+  await judgeSubmitFlow(P2);                           // 後端 open → 200 收下（S7 競態窗）
+  await M.waitForSelector('text=未採計回報', { timeout: 15000 });   // 面板標記
+  const s7ChipCard = await M.locator('button:has-text("更正未採計")').count(); // 桌卡標記
+  step(s7Backend === 'open' && s7ChipCard > 0 ? '✅' : '❌', 'S7 守衛可見化：鎖定競態留標記',
+    s7Backend === 'open' && s7ChipCard > 0
+      ? '算分時 lock 斷線（後端 open）、P2 更正 200 落地；面板＋桌卡出現「更正未採計」標記'
+      : `backend=${s7Backend} cardChip=${s7ChipCard}`);
+  await M.screenshot({ path: path.join(OUT, '10-M-s7-marker.png') });
+
+  await M.unroute('**/rounds/2/lock');                 // 恢復連線 → 對帳自動補鎖
+  let s7Locked = false;
+  for (const t0 = Date.now(); Date.now() - t0 < 12000;) {
+    if ((await roundsStatus()).get(2) === 'locked') { s7Locked = true; break; }
+    await wait(500);
+  }
+  await M.locator('button:has-text("更正未採計")').first().click();  // 由標記查看
+  await M.waitForSelector('text=鎖定後收到裁判更正');
+  await M.getByRole('button', { name: '解除第 2 輪鎖定' }).click();
+  await M.waitForSelector('text=裁判回報更正', { timeout: 15000 }); // 解鎖後回報進入正常確認
+  await M.getByRole('button', { name: '維持現狀' }).click();
+  let s7MarkerGone = false, s7After = null;            // 解鎖推送 fire-and-forget，慢時由 ≤4s 對帳補送
+  for (const t0 = Date.now(); Date.now() - t0 < 12000;) {
+    s7MarkerGone = (await M.locator('button:has-text("更正未採計")').count()) === 0;
+    s7After = (await roundsStatus()).get(2);
+    if (s7MarkerGone && s7After === 'open') break;
+    await wait(500);
+  }
+  const s7ok = s7Locked && s7MarkerGone && s7After === 'open';
+  step(s7ok ? '✅' : '❌', 'S7 標記解鎖 → 正常採計流程',
+    s7ok ? '恢復連線自動補鎖；由標記解鎖 → 跳採計確認 → 維持現狀後標記清除、後端回 open'
+         : `relocked=${s7Locked} markerGone=${s7MarkerGone} after=${s7After}`);
+
+  // ── S5 回歸：配對對帳（主動偵測 + 守衛 B 可見化，drift doc §3 P1）──
+  // 修改桌 2 配對（發佈後未重發）→ 面板出現「配對已變更未重新發佈」；桌 2 裁判照舊
+  // 配對回報 → 守衛 B 留「配對不符」標記；改回配對 → 偵測解除、回報進入正常流程套用
+  const s5State = JSON.parse(await M.evaluate(() => localStorage.getItem('tournamentManagerState')));
+  const s5t2 = s5State.matchesByRound['2'].find(m => m.table === 2);
+  const s5t3 = s5State.matchesByRound['2'].find(m => m.table === 3);
+  await M.locator('button').filter({ hasText: '修改配對' }).first().click();
+  const s5Vals = await M.locator('div.elevated select').evaluateAll(els => els.map(e => e.value));
+  const s5Idx = s5Vals.findIndex(v => v === String(s5t2.player1));
+  await M.locator('div.elevated select').nth(s5Idx).selectOption(String(s5t3.player1));
+  await M.locator('button').filter({ hasText: '完成修改' }).first().click();
+  await M.waitForSelector('text=配對已變更未重新發佈', { timeout: 5000 });
+  step('✅', 'S5 主動偵測：改配對未重發', '面板出現「⚠ 配對已變更未重新發佈（R2）」');
+  // 桌 2 裁判（HTTP 模擬）按裁判手機上的舊配對回報 → 200 落地、M 守衛 B 留標記
+  const s5Submit = await fetch(`${API}/judge/result`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${cfg.tableTokens[1].token}`, 'X-Device-Id': 'e2e-t2', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ roundNo: 2, groups: [1, 1, 1, 1, 1].map(w => ({ winner: w, overtime: false })), version: 0 }),
+  });
+  await M.waitForSelector('button:has-text("配對不符")', { timeout: 15000 });
+  await M.locator('button:has-text("配對不符")').first().click();       // 查看標記
+  await M.waitForSelector('text=裁判回報與本地配對不符');
+  await M.getByRole('button', { name: '我知道了' }).click();
+  step(s5Submit.status === 200 ? '✅' : '❌', 'S5 守衛可見化：配對不符留標記',
+    `舊配對回報 HTTP ${s5Submit.status} 落地；M 出現「配對不符」標記＋查看視窗`);
+  await M.screenshot({ path: path.join(OUT, '11-M-s5-marker.png') });
+  // 改回配對 → 偵測即時解除；下次輪詢回報配對相符 → 正常套用、標記自動清除
+  await M.locator('button').filter({ hasText: '修改配對' }).first().click();
+  await M.locator('div.elevated select').nth(s5Idx).selectOption(String(s5t2.player1));
+  await M.locator('button').filter({ hasText: '完成修改' }).first().click();
+  const s5DriftGone = (await M.locator('text=配對已變更未重新發佈').count()) === 0;
+  let s5MarkerGone = false;
+  for (const t0 = Date.now(); Date.now() - t0 < 12000;) {
+    if ((await M.locator('button:has-text("配對不符")').count()) === 0) { s5MarkerGone = true; break; }
+    await wait(500);
+  }
+  const s5ok = s5DriftGone && s5MarkerGone;
+  step(s5ok ? '✅' : '❌', 'S5 改回配對 → 自動收斂',
+    s5ok ? '偵測解除；回報配對相符後正常套用、標記自動清除'
+         : `driftGone=${s5DriftGone} markerGone=${s5MarkerGone}`);
+
   // ── Excel 匯出：桌次表帶 A~E 五欄＋組數（黑:白）──
   try {
     const require2 = createRequire(import.meta.url);

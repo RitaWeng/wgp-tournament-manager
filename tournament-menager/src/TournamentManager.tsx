@@ -463,6 +463,25 @@ const WithdrawButton = ({ player, onToggle }: { player: any; onToggle: (n: numbe
 const normalizePlayers = (list) =>
   (list || []).map(({ status, ...p }) => ({ withdrawnRound: null, ...p }));
 
+// 被靜默守衛丟棄的裁判回報（docs/online-score-sync-drift.md §3 P1 可見化）。
+// reason='locked'：本地已算分鎖定後才收到的更正（S7）；'pairing'：與本地配對不符（S5）。
+// 純可見標記，不影響成績；解鎖／重新發佈後回報進入正常確認流程時自動清除
+type DroppedReport = {
+  version: number;
+  reason: 'locked' | 'pairing';
+  winnerNumber: number | null;              // locked：更正後的勝方（本機編號）；pairing 無法對應為 null
+  reportedP1?: number;                      // pairing：回報所依據的配對雙方
+  reportedP2?: number;
+  result?: 1 | 2;
+  groups: onlineSync.GroupResult[] | null;
+};
+
+// 一輪配對的指紋（S5 主動偵測）：桌號:雙方編號 排序串接。輪空桌不發佈、不入指紋
+const pairingFingerprint = (ms: any[]) => (ms || [])
+  .filter((m: any) => m.player2 !== 0)
+  .map((m: any) => `${m.table}:${m.player1}-${m.player2}`)
+  .sort().join('|');
+
 const TournamentManager = () => {
   // 狀態管理
   const [allPlayers, setAllPlayers] = useState(10);
@@ -551,6 +570,10 @@ const TournamentManager = () => {
   const [lockSyncPending, setLockSyncPending] = useState<number[]>([]);
   // 已處理的裁判回報：key `${round}-${table}` → 已見版本與勝方；dismissed = 操作者拒絕採計該版本
   const [judgeReports, setJudgeReports] = useState<Record<string, { version: number; winner: number; dismissed?: boolean }>>({});
+  // 守衛丟棄回報的可見標記（S5/S7）：key `${round}-${table}` → 最新被丟棄版本（見 DroppedReport）
+  const [droppedReports, setDroppedReports] = useState<Record<string, DroppedReport>>({});
+  // S5 主動偵測：各輪最近一次發佈的配對指紋；與本機現況不符 = 本地配對已變更、尚未重新發佈
+  const [publishedPairings, setPublishedPairings] = useState<Record<number, string>>({});
   // matchesByRound 經裁判回報批次更新後，讓 matches（當前輪視圖）跟上的訊號
   const [judgeApplyTick, setJudgeApplyTick] = useState(0);
   // UI 重構：桌次卡片是否進入「修改配對」模式（兩側選手變成 select 可換人）
@@ -598,6 +621,9 @@ const TournamentManager = () => {
         isPairingButtonDisabled,
         showAuxScoreHelp,
         scoredRounds,
+        judgeReports, // 含拒絕採計決定（dismissed）：不持久化的話重載後同一筆 revision 會再跳確認窗
+        droppedReports,     // 守衛丟棄標記與發佈指紋（S5/S7）：可見標記不能因重載消失
+        publishedPairings,
         projectionTitle,
         standingsTopN,
         lastSaved: new Date().toISOString() // 記錄最後保存時間
@@ -646,6 +672,15 @@ const TournamentManager = () => {
       if (appState.scoredRounds !== undefined) {
         setScoredRounds(appState.scoredRounds);
       }
+      if (appState.judgeReports !== undefined) {
+        setJudgeReports(appState.judgeReports);
+      }
+      if (appState.droppedReports !== undefined) {
+        setDroppedReports(appState.droppedReports);
+      }
+      if (appState.publishedPairings !== undefined) {
+        setPublishedPairings(appState.publishedPairings);
+      }
       if (appState.projectionTitle !== undefined) {
         setProjectionTitle(appState.projectionTitle);
       }
@@ -682,6 +717,9 @@ const TournamentManager = () => {
         isPairingButtonDisabled,
         showAuxScoreHelp,
         scoredRounds,
+        judgeReports, // 換機接手同一場線上賽事時，拒絕採計決定一併帶走
+        droppedReports,
+        publishedPairings,
         projectionTitle,
         standingsTopN,
         exportedAt: new Date().toISOString() // 記錄下載時間
@@ -743,6 +781,11 @@ const TournamentManager = () => {
         if (appState.scoredRounds !== undefined) {
           setScoredRounds(appState.scoredRounds);
         }
+        // 線上回報處理紀錄整組替換（舊備份缺欄位時清空）：沿用匯入前的現值會讓
+        // 殘留的高 version judgeReports 把匯入後的合法回報靜默擋掉
+        setJudgeReports(appState.judgeReports ?? {});
+        setDroppedReports(appState.droppedReports ?? {});
+        setPublishedPairings(appState.publishedPairings ?? {});
         if (appState.projectionTitle !== undefined) {
           setProjectionTitle(appState.projectionTitle);
         }
@@ -882,7 +925,7 @@ const handleToggleWithdraw = async (playerNumber) => {
     if (players.length > 0) {
       saveStateToLocalStorage();
     }
-  }, [allPlayers, rounds, winPoint, players, matches, matchesByRound, sortByRank, allowSameCountry, currentRound, gameTitle, selectedRound, isPairingButtonDisabled, showAuxScoreHelp, scoredRounds, projectionTitle, standingsTopN]);
+  }, [allPlayers, rounds, winPoint, players, matches, matchesByRound, sortByRank, allowSameCountry, currentRound, gameTitle, selectedRound, isPairingButtonDisabled, showAuxScoreHelp, scoredRounds, judgeReports, droppedReports, publishedPairings, projectionTitle, standingsTopN]);
   
   // 在組件卸載前執行最後一次保存
   useEffect(() => {
@@ -2063,20 +2106,17 @@ const handleFileUpload = (event) => {
     setIsPairingButtonDisabled(false);
     // 清除鎖定輪次清單
     setScoredRounds([]);
+    // 清除裁判回報處理紀錄（含拒絕採計決定）、守衛丟棄標記與發佈指紋
+    setJudgeReports({});
+    setDroppedReports({});
+    setPublishedPairings({});
 
     // 清除 localStorage 中保存的狀態
     localStorage.removeItem('tournamentManagerState');
   };
 
-  // 解除輪次鎖定，允許重新登錄結果並算分
-  const unlockRound = async (round: number) => {
-    const ok = await dialog.confirm({
-      title: '解除輪次鎖定',
-      message: `確定要解除第 ${round} 輪的鎖定嗎？\n解除後可重新修改結果，再按「算分」重新計算。`,
-      tone: 'warn',
-      okText: '解除鎖定',
-    });
-    if (!ok) return;
+  // 解除輪次鎖定的實作本體（呼叫端自行負責確認視窗：unlockRound 與守衛標記對話框共用）
+  const doUnlockRound = (round: number) => {
     const nextScored = scoredRounds.filter(r => r !== round);
     setScoredRounds(nextScored);
     setCurrentRound(round);
@@ -2093,12 +2133,27 @@ const handleFileUpload = (event) => {
     }
   };
 
+  // 解除輪次鎖定，允許重新登錄結果並算分
+  const unlockRound = async (round: number) => {
+    const ok = await dialog.confirm({
+      title: '解除輪次鎖定',
+      message: `確定要解除第 ${round} 輪的鎖定嗎？\n解除後可重新修改結果，再按「算分」重新計算。`,
+      tone: 'warn',
+      okText: '解除鎖定',
+    });
+    if (!ok) return;
+    doUnlockRound(round);
+  };
+
   // ── 線上成績回報：輪詢與套用（規格 §5；所有邏輯以 onlineCfg 存在為前提）──
 
   // 輪詢 handler 透過 ref 呼叫「當次 render 的新函式」，避免 interval 閉包吃到舊 state
   const processJudgeResultsRef = useRef<(rows: onlineSync.JudgeResultRow[]) => Promise<void>>();
   // 正在跳確認視窗的桌次，避免同一筆更正重複開窗
   const revisionPromptOpen = useRef<Set<string>>(new Set());
+  // 發佈世代：發佈桌次時遞增，作廢「發佈前已在途」的 fetchResults 回應——
+  // 舊回應若在發佈後才返回，會把伺服器上已刪除的舊回報誤標配對不符或重新套用
+  const publishEpochRef = useRef(0);
 
   // 批次套用裁判回報（functional update：同一次輪詢多筆結果不互相蓋寫）。
   // groups = 五組（ABCDE）明細，一併存進 match 供桌次表 Excel 匯出
@@ -2132,20 +2187,46 @@ const handleFileUpload = (event) => {
     const autoWins: { roundNo: number; tableNo: number; winnerNumber: number; groups: onlineSync.GroupResult[] | null }[] = [];
     const reportMarks: Record<string, { version: number; winner: number; dismissed?: boolean }> = {};
     const conflicts: { row: onlineSync.JudgeResultRow; winnerNumber: number; localWinner: number | null }[] = [];
+    // 守衛丟棄標記的增刪（迴圈結束後一次套用）
+    const markSet: Record<string, DroppedReport> = {};
+    const markClear: string[] = [];
 
     for (const row of rows) {
       const key = `${row.round_no}-${row.table_no}`;
       const known = judgeReports[key];
       if (known && known.version >= row.version) continue;      // 這個版本已處理（採計或拒絕）過
-      if (scoredRounds.includes(row.round_no)) continue;         // 本地已算分鎖定，不動既有結果
       const match = (matchesByRound[row.round_no] || []).find((m: any) => m.table === row.table_no);
-      if (!match || match.player2 === 0) continue;
-      // 桌次重發過（本地選手與回報不一致）→ 忽略舊回報
-      if (match.player1 !== row.player1_id || match.player2 !== row.player2_id) continue;
+
+      // 守衛 B（配對不符）：桌次重發過或本地改了配對——不套用，但留可見標記（S5）。
+      // 本地已無此桌／已變輪空也視為配對不符（重抓對後未重發的另一種形態），不再靜默
+      if (!match || match.player2 === 0 ||
+          match.player1 !== row.player1_id || match.player2 !== row.player2_id) {
+        const cur = droppedReports[key];
+        if (!cur || cur.version < row.version) {
+          markSet[key] = { version: row.version, reason: 'pairing', winnerNumber: null,
+            reportedP1: row.player1_id, reportedP2: row.player2_id, result: row.result, groups: row.groups };
+        }
+        continue;
+      }
 
       const winnerNumber = row.result === 1 ? match.player1 : match.player2;
       const localRecorded = match.player1Score !== undefined;
       const localWinner = localRecorded ? (match.player1Score === winPoint ? match.player1 : match.player2) : null;
+
+      // 守衛 A（已鎖定）：本地已算分，不動既有結果。但有意義的更正（桌勝方與登錄不同）
+      // 留可見標記（S7 鎖定競態）；操作者可由標記解鎖，回報即進入下方正常確認流程
+      if (scoredRounds.includes(row.round_no)) {
+        if (winnerNumber !== localWinner) {
+          const cur = droppedReports[key];
+          if (!cur || cur.version < row.version) {
+            markSet[key] = { version: row.version, reason: 'locked', winnerNumber, result: row.result, groups: row.groups };
+          }
+        } else if (droppedReports[key]) {
+          markClear.push(key);   // 裁判又改回與登錄一致 → 標記解除
+        }
+        continue;
+      }
+      if (droppedReports[key]) markClear.push(key);  // 回報進入正常流程（套用或確認窗），標記功成身退
 
       if (localRecorded && localWinner === winnerNumber) {
         // 桌勝方一致：組明細（ABCDE）有更新就靜默帶入——不影響排名，不跳警示；
@@ -2163,6 +2244,13 @@ const handleFileUpload = (event) => {
 
     applyJudgeWins(autoWins);
     if (Object.keys(reportMarks).length) setJudgeReports(prev => ({ ...prev, ...reportMarks }));
+    if (Object.keys(markSet).length || markClear.length) {
+      setDroppedReports(prev => {
+        const next = { ...prev, ...markSet };
+        for (const k of markClear) delete next[k];
+        return next;
+      });
+    }
 
     // 衝突逐筆確認：revision（已送出又被更改）一律醒目警示，採計與否都記版本避免重複跳窗
     for (const c of conflicts) {
@@ -2204,6 +2292,52 @@ const handleFileUpload = (event) => {
     }
   };
   processJudgeResultsRef.current = processJudgeResults;
+
+  // 守衛丟棄標記的查看視窗（S5/S7 可見化）：顯示被丟棄回報的內容與處置方式。
+  // locked → 可一鍵解除鎖定，回報隨即進入正常採計確認流程；pairing → 提示重新發佈
+  const showDroppedReport = async (roundNo: number, tableNo: number) => {
+    const key = `${roundNo}-${tableNo}`;
+    const d = droppedReports[key];
+    if (!d) return;
+    const wins1 = (d.groups || []).filter(g => g.winner === 1).length;
+    const otLabels = (d.groups || [])
+      .map((g, i) => (g.overtime ? 'ABCDE'[i] : null)).filter(Boolean).join('、');
+    const groupsNote = d.groups && d.result
+      ? `（五組 ${d.result === 1 ? wins1 : 5 - wins1}:${d.result === 1 ? 5 - wins1 : wins1}${otLabels ? `，${otLabels}組加賽` : ''}）`
+      : '';
+
+    if (d.reason === 'pairing') {
+      await dialog.alert({
+        title: '裁判回報與本地配對不符',
+        message: `第 ${roundNo} 輪・桌 ${tableNo}：裁判回報的對戰為「${getPlayerName(d.reportedP1!)} vs ${getPlayerName(d.reportedP2!)}」` +
+          `（${d.result === 1 ? '前' : '後'}者勝${groupsNote}），與本地目前的配對不同，未予採計。\n` +
+          `通常是發佈後又修改了配對：請重新發佈本輪桌次，讓裁判在新桌次下重新回報。`,
+        tone: 'warn',
+      });
+      return;
+    }
+
+    const match = (matchesByRound[roundNo] || []).find((m: any) => m.table === tableNo);
+    const localWinner = match && match.player1Score !== undefined
+      ? (match.player1Score === winPoint ? match.player1 : match.player2) : null;
+    const ok = await dialog.confirm({
+      title: '鎖定後收到裁判更正',
+      message: `第 ${roundNo} 輪已算分鎖定，桌 ${tableNo} 在鎖定後收到裁判更正：勝方「${getPlayerName(d.winnerNumber!)}」${groupsNote}，` +
+        `與目前登錄（${localWinner != null ? `「${getPlayerName(localWinner)}」勝` : '未登錄'}）不同，尚未採計。\n` +
+        `要採計需先解除第 ${roundNo} 輪鎖定：解除後會跳出採計確認視窗，決定後請重新算分。`,
+      tone: 'warn',
+      okText: `解除第 ${roundNo} 輪鎖定`,
+      cancelText: '暫不處理',
+    });
+    if (ok) doUnlockRound(roundNo);
+  };
+
+  // S5 主動偵測：已發佈輪次中，本地配對已與發佈時不同（改了配對／重抓對後忘記重發）
+  const pairingDriftRounds = onlineCfg
+    ? Object.keys(publishedPairings).map(Number)
+        .filter(r => publishedPairings[r] !== pairingFingerprint(matchesByRound[r] || []))
+        .sort((a, b) => a - b)
+    : [];
 
   // ── P0.1 鎖定狀態無狀態對帳（docs/online-score-sync-drift.md §3 P0、§7 P0.1；修 S1–S4、F1/F2/F5）──
   // 以本機 scoredRounds 為權威：每次成績輪詢後端會一併回傳各輪 status（rounds），
@@ -2249,10 +2383,12 @@ const handleFileUpload = (event) => {
     let cancelled = false;
     const tick = async () => {
       try {
+        const epoch = publishEpochRef.current;
         const { results: rows, rounds } = await onlineSync.fetchResults(onlineCfg);
         if (cancelled) return;
         setOnlineError(null);
         setOnlineLastSync(new Date().toLocaleTimeString('zh-TW', { hour12: false }));
+        if (epoch !== publishEpochRef.current) return;   // 期間有發佈 → 此回應已過期，下次輪詢用新資料
         await processJudgeResultsRef.current?.(rows);
         await reconcileLocksRef.current?.(rounds);   // 每次輪詢以後端回報的各輪 status 對帳到本機權威
       } catch (e: any) {
@@ -2290,6 +2426,8 @@ const handleFileUpload = (event) => {
       onlineSync.saveSyncConfig(cfg);
       setOnlineCfg(cfg);
       setJudgeReports({});
+      setDroppedReports({});
+      setPublishedPairings({});
       // 「建立賽事前已在本機算分鎖定」的輪次（S1）由成績輪詢的無狀態對帳同步：
       // setOnlineCfg 觸發輪詢 effect 立即 tick，首次對帳就會補鎖，毋須在此另行推送
       try { localStorage.setItem('wgpOnlineSetupKey', setupKey); } catch { /* 存不進去下次再輸入 */ }
@@ -2318,6 +2456,7 @@ const handleFileUpload = (event) => {
       }));
     try {
       await onlineSync.publishPairings(onlineCfg, currentRound, pairings);
+      publishEpochRef.current++;   // 作廢發佈前已在途的輪詢回應（見 publishEpochRef 註解）
       // 發佈會把該輪 status 重設為 open；若本輪本機已算分（少見，但如重發舊輪），
       // 立即補鎖回來以免出現「已鎖輪次在後端變 open」的空窗（docs/online-score-sync-drift.md）；
       // 失敗由輪詢對帳 ≤4 秒內補上
@@ -2333,6 +2472,16 @@ const handleFileUpload = (event) => {
         }
         return next;
       });
+      // 本輪的守衛丟棄標記隨重發作廢（舊配對的回報已無意義）；並記下發佈指紋供
+      // 「本地配對已變更未重新發佈」偵測（S5）
+      setDroppedReports(prev => {
+        const next: typeof prev = {};
+        for (const [k, v] of Object.entries(prev)) {
+          if (!k.startsWith(`${currentRound}-`)) next[k] = v;
+        }
+        return next;
+      });
+      setPublishedPairings(prev => ({ ...prev, [currentRound]: pairingFingerprint(roundMatches) }));
       message.success(`已發佈第 ${currentRound} 輪桌次（${pairings.length} 桌），裁判手機數秒內會更新`);
     } catch (e: any) {
       message.error(e.message === 'round_locked'
@@ -2589,6 +2738,8 @@ const handleFileUpload = (event) => {
     // 線上模式：此桌結果採計自裁判回報時顯示來源標示
     const judgeReported = onlineCfg && recorded &&
       judgeReports[`${round}-${match.table}`] && !judgeReports[`${round}-${match.table}`].dismissed;
+    // 守衛丟棄標記（S5/S7）：此桌有被丟棄的裁判回報，點擊查看內容與處置
+    const dropped = onlineCfg ? droppedReports[`${round}-${match.table}`] : undefined;
     // 五組（ABCDE）明細：裁判回報帶入後顯示組數比，hover 看各組勝方與加賽註記
     const groupsDetail: onlineSync.GroupResult[] | undefined = match.groups;
     const gWins1 = groupsDetail ? groupsDetail.filter(x => x.winner === 1).length : 0;
@@ -2600,7 +2751,7 @@ const handleFileUpload = (event) => {
 
     return (
       <div className="elevated rounded-lg overflow-hidden relative">
-        {(judgeReported || groupsDetail) && (
+        {(judgeReported || groupsDetail || dropped) && (
           <span className="absolute top-0.5 right-0.5 z-10 flex items-center gap-1">
             {groupsDetail && (
               <span
@@ -2613,6 +2764,15 @@ const handleFileUpload = (event) => {
                 className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--info-soft)] text-[var(--info)] font-medium"
                 title="此結果由裁判線上回報"
               >裁判</span>
+            )}
+            {dropped && (
+              <button
+                onClick={() => showDroppedReport(round, match.table)}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--warn-soft)] text-[var(--warn)] font-medium cursor-pointer"
+                title={dropped.reason === 'locked'
+                  ? '鎖定後收到裁判更正，尚未採計——點擊查看'
+                  : '裁判回報與本地配對不符——點擊查看'}
+              >{dropped.reason === 'locked' ? '⚠ 更正未採計' : '⚠ 配對不符'}</button>
             )}
           </span>
         )}
@@ -3675,6 +3835,32 @@ const handleFileUpload = (event) => {
                           {lockSyncPending.length > 0 && (
                             <span className="text-xs text-[var(--warn)]" title="鎖定/解鎖狀態尚未同步到後端，將自動重試">
                               ⟳ 鎖定同步中（R{lockSyncPending.join('、R')}）
+                            </span>
+                          )}
+                          {pairingDriftRounds.length > 0 && (
+                            <span
+                              className="text-xs text-[var(--warn)]"
+                              title="發佈後本地配對又被修改，裁判手機仍是舊桌次；未重新發佈前，裁判回報會因配對不符而無法採計"
+                            >
+                              ⚠ 配對已變更未重新發佈（R{pairingDriftRounds.join('、R')}）
+                            </span>
+                          )}
+                          {Object.keys(droppedReports).length > 0 && (
+                            <span className="text-xs text-[var(--warn)] inline-flex items-center gap-1 flex-wrap">
+                              ⚠ 未採計回報：
+                              {Object.keys(droppedReports).sort().map(k => {
+                                const [r, t] = k.split('-').map(Number);
+                                return (
+                                  <button
+                                    key={k}
+                                    onClick={() => showDroppedReport(r, t)}
+                                    className="underline hover:opacity-75"
+                                    title={droppedReports[k].reason === 'locked'
+                                      ? '鎖定後收到裁判更正，尚未採計——點擊查看'
+                                      : '裁判回報與本地配對不符——點擊查看'}
+                                  >R{r} 桌{t}</button>
+                                );
+                              })}
                             </span>
                           )}
                           {onlineError && <span className="text-xs text-[var(--warn)]">{onlineError}</span>}
