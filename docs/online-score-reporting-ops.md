@@ -40,9 +40,13 @@
 審查發現的**次要問題**（不擋上線，留待 Phase 5 迭代）：
 
 1. retention cron 的日期比較有格式不一致（ISO `T` vs SQLite 空格），會提早最多約 5 小時刪資料——無實害。
+   —— **已於 2026-07-19 修正**（cutoff 改用 SQLite `datetime('now','-7 days')`，格式一致；
+   附回歸測試：與 cutoff 同 UTC 日較晚時刻的賽事不再被誤刪），此項已解決。
 2. `POST /events` 無認證，理論上可被灌垃圾賽事（有 rate limit 擋，風險低）。
    —— **已於 2026-07-08 補上 SETUP_KEY 建立金鑰**（wrangler secret），此項已解決。
 3. 主控端「拒絕採計」的 revision 決定只存在記憶體，重新整理頁面後同一筆會再跳一次確認窗。
+   —— **已於 2026-07-19 修正**（`judgeReports` 併入 appState 持久化，重載／匯出匯入都保留；
+   e2e 加回歸步驟），此項已解決。
 
 ### 2.2 修正 commit `ddf3a2e`（審查中發現並修復）
 
@@ -151,7 +155,8 @@ database_id 已在 `wrangler.toml`，不需重建資料庫。
 
 ### 其他待辦
 
-- [x] 前端 develop → gh-pages preview 部署（主控端需從 GitHub Pages 開，QR 卡網址才正確）——已完成，preview 現為 v1.4.3（2026-07-10）
+- [x] 前端 develop → gh-pages preview 部署（主控端需從 GitHub Pages 開，QR 卡網址才正確）——已完成，preview 現為 v1.5.0（2026-07-18，P0.1 含後端一併部署）
 - [ ] 真手機實測（iOS Safari + Android Chrome 各走完一輪回報）——Phase 3 驗收的最後一項
 - [ ] 小型練習賽試跑（Phase 5），收集裁判回饋
-- [ ] §2.1 列的三個次要問題，Phase 5 迭代時處理
+- [x] §2.1 列的三個次要問題——已全數解決（SETUP_KEY 2026-07-08；retention 格式與
+  拒絕採計持久化 2026-07-19）
