@@ -154,6 +154,10 @@ unlock 迴圈無來源可掃、**永不送 `unlockRoundRemote`**，導致本機�
 - **進度（2026-07-12）**：P0（鎖定狀態對帳）已實作並實測，S1/S2/S3/S4 修復（commit `d50f990`）；
   但後續自我 code-review 在 P0 內找到殘留缺口 **F1–F5（見 §7）**，其中 F1（解鎖失敗後重載永久
   漂移）、F2（解鎖失敗無提示）應排 **P0.1** 修——建議走「後端狀態端點 → 無狀態對帳」。
+- **進度（2026-07-18）**：**P0.1 已實作並全數驗證 ✅**（實作 `fe8cd31`，無狀態鎖定對帳）——
+  後端 29 項整合測試、前端 build＋fixture、e2e 20 步（含新增 F1 回歸段：解鎖失敗 → reload →
+  unroute 後 1.6s 自癒）全綠。**F1/F2/F5 已修**；F3 刻意維持（S1 保護行為）、F4 殘餘
+  ≤4s 收斂屬可接受。詳 §7。
   S5（P1 配對對帳）、S6（P2 重設防呆）、S7＋守衛可見化（P1）尚未動工。
 
 ---
@@ -185,7 +189,7 @@ unlock 迴圈無來源可掃、**永不送 `unlockRoundRemote`**，導致本機�
 
 ---
 
-## 7. P0 殘留缺口（自我 code-review 發現，2026-07-12）— 待 P0.1 修
+## 7. P0 殘留缺口（自我 code-review 發現，2026-07-12）— P0.1 已修 F1/F2/F5（2026-07-18 驗證 ✅）
 
 P0 commit `d50f990` 後再跑一次 high-effort 多角度 code-review（8 角度 finder + 驗證輪），
 在 P0 自己的實作裡找到以下殘留缺口。**F1/F2 是 P0 沒完全解決其宣稱要解決問題的證據**，
@@ -193,11 +197,11 @@ P0 commit `d50f990` 後再跑一次 high-effort 多角度 code-review（8 角度
 
 | # | 嚴重度 | 缺口 | 觸發 / 後果 |
 |---|--------|------|-------------|
-| **F1** | **高（CONFIRMED）** | **解鎖失敗後重載 → 永久鎖定漂移** | 解鎖 R 但 `unlockRoundRemote` 失敗，於下次 4 秒輪詢重試前重載。`backendKnownRef`（in-memory、未持久化）清空、`scoredRounds` 還原後不含 R → 對帳只掃由 scored 重建的 `known`、永不再考慮 R → 後端永久 locked、裁判被擋。且 R 本地顯示為「未鎖定可編輯」（`isLocked=scoredRounds.includes` 為 false），操作者無從再觸發解鎖，**UI 無法恢復、兩端無訊號**。與 §6 步驟 5 Codex 找到的是同類漏洞，往下深一層。 |
-| **F2** | **中高（CONFIRMED，regression）** | **解鎖失敗完全無提示** | `lockSyncPending = scored.filter(r => confirmed.get(r)!=='locked')` 只涵蓋「應鎖定」方向；解鎖目標不在 scored → 永不進 pending → 無「⟳ 鎖定同步中」chip。且此 commit 把舊版 unlock 失敗的 `message.warning` 移除。解鎖失敗比改動前更隱形，與 F1 加乘。 |
-| **F3** | 低-中（CONFIRMED，transient） | **幽靈鎖定輪次** | `createOnlineEvent` 對所有 scoredRounds 發 `lockRound`，會替「從未發佈」的輪次在後端 upsert 出無 pairing 的 locked round。離線打完 1-5 輪才建賽時，第 6 輪發佈前掃碼的裁判從 `/judge/pairing` 取到 `MAX(round_no)=5, locked, pairing=null`，看到「第 5 輪已鎖定、無對戰」。發佈下一輪即消失；重發 1-5 輪會 409。 |
-| **F4** | 低-中（PLAUSIBLE） | **重入守衛丟立即推送＋舊閉包瞬間反向** | 慢速對帳（await 最長 8s）進行中時的算分/解鎖 reconcile 撞 `reconcilingRef` early-return、延後一個輪詢週期，窗內裁判可提交到「操作者以為已鎖」的輪次；或 in-flight 對帳用舊 scored 閉包＋最新 known 誤送反向 lock/unlock。最終收斂但有短暫錯態。 |
-| **F5** | 低（PLAUSIBLE） | **非陣列 scoredRounds 卡死對帳** | `scored.forEach` 在 `try` 之前；損毀/手改的匯入狀態（`scoredRounds` 為 null/純量，還原僅 `!==undefined` 防呆）→ forEach 拋錯逃過 finally → `reconcilingRef` 永久卡 true → 整個 session 鎖定對帳靜默死亡＋unhandledrejection。 |
+| **F1** | **高（CONFIRMED）→ ✅ P0.1 已修（e2e 回歸驗證）** | **解鎖失敗後重載 → 永久鎖定漂移** | 解鎖 R 但 `unlockRoundRemote` 失敗，於下次 4 秒輪詢重試前重載。`backendKnownRef`（in-memory、未持久化）清空、`scoredRounds` 還原後不含 R → 對帳只掃由 scored 重建的 `known`、永不再考慮 R → 後端永久 locked、裁判被擋。且 R 本地顯示為「未鎖定可編輯」（`isLocked=scoredRounds.includes` 為 false），操作者無從再觸發解鎖，**UI 無法恢復、兩端無訊號**。與 §6 步驟 5 Codex 找到的是同類漏洞，往下深一層。 |
+| **F2** | **中高（CONFIRMED，regression）→ ✅ P0.1 已修** | **解鎖失敗完全無提示** | `lockSyncPending = scored.filter(r => confirmed.get(r)!=='locked')` 只涵蓋「應鎖定」方向；解鎖目標不在 scored → 永不進 pending → 無「⟳ 鎖定同步中」chip。且此 commit 把舊版 unlock 失敗的 `message.warning` 移除。解鎖失敗比改動前更隱形，與 F1 加乘。 |
+| **F3** | 低-中（CONFIRMED，transient）→ 維持原樣（S1 依賴，P1 再議） | **幽靈鎖定輪次** | `createOnlineEvent` 對所有 scoredRounds 發 `lockRound`，會替「從未發佈」的輪次在後端 upsert 出無 pairing 的 locked round。離線打完 1-5 輪才建賽時，第 6 輪發佈前掃碼的裁判從 `/judge/pairing` 取到 `MAX(round_no)=5, locked, pairing=null`，看到「第 5 輪已鎖定、無對戰」。發佈下一輪即消失；重發 1-5 輪會 409。 |
+| **F4** | 低-中（PLAUSIBLE）→ P0.1 大幅緩解（殘餘 ≤4s 收斂） | **重入守衛丟立即推送＋舊閉包瞬間反向** | 慢速對帳（await 最長 8s）進行中時的算分/解鎖 reconcile 撞 `reconcilingRef` early-return、延後一個輪詢週期，窗內裁判可提交到「操作者以為已鎖」的輪次；或 in-flight 對帳用舊 scored 閉包＋最新 known 誤送反向 lock/unlock。最終收斂但有短暫錯態。 |
+| **F5** | 低（PLAUSIBLE）→ ✅ P0.1 已修（狀態源頭移除） | **非陣列 scoredRounds 卡死對帳** | `scored.forEach` 在 `try` 之前；損毀/手改的匯入狀態（`scoredRounds` 為 null/純量，還原僅 `!==undefined` 防呆）→ forEach 拋錯逃過 finally → `reconcilingRef` 永久卡 true → 整個 session 鎖定對帳靜默死亡＋unhandledrejection。 |
 
 ### 建議修法：P0.1（後端狀態端點 → 無狀態對帳）— 一次解 F1/F2/F5 根因
 
@@ -221,7 +225,7 @@ F1/F2/F5 的共同根因（code-review altitude 角度亦指出）：**後端沒
 5. **F2 立即止血（不等 P0.1）**：可先在 unlock 推送失敗時加回一則 warning，或把 unlock 方向
    也納入 `lockSyncPending`（`known` 中 desired=open 但 confirmed≠open 者）。
 
-### P0.1 實作進度（2026-07-12 交接；2026-07-18 存量驗證 1–3 全綠，餘 F1 回歸測試未寫）
+### P0.1 實作進度（2026-07-12 實作交接；2026-07-18 ✅ 已驗證——驗證清單全數完成）
 
 **已完成（都在 working tree，尚未 commit 時見 git status；若已 commit 見 git log）**：
 
@@ -254,15 +258,16 @@ F1/F2/F5 的共同根因（code-review altitude 角度亦指出）：**後端沒
    大小警告）；全部 fixture 回歸通過。
 3. ✅ `node backend/test/e2e-online.mjs` — ALL PASS（18 步，含「算分 → 鎖定同步」、
    後端掛掉退回手動、結束賽事），三 context 無 pageerror。
-4. **補 F1 回歸測試（尚未寫；2026-07-18 已瘦身）**：**併入既有 `backend/test/e2e-online.mjs`
-   加一段情境**（不開新檔，省一份腳手架），且**只驗後端狀態自癒、不驗 chip UI**——chip
-   出現/消失的斷言最脆弱、價值最低，F2 靠人工目視即可。情境：
-   算分（驗後端 R1=locked，用新 rounds 欄位斷言）→
-   `page.route('**/rounds/1/unlock', r => r.abort())` → 按「解除鎖定」＋確認 →
-   驗後端仍 locked → **reload（保持 abort）** → unroute → ≤10s 內驗後端 R1=open（F1 自癒）。
-   斷言後端狀態可直接以 localStorage 的 `wgpOnlineSync` cfg 打 `GET /events/:id/results` 讀 `rounds`。
-   注意 §6 步驟 6 的教訓：`addInitScript` 會在 reload 重跑，seed localStorage 要「空才 seed」。
-5. 全綠後更新本節為「✅ 已驗證」、更新 §5 進度與 §7 表格（F1/F2/F5 → 已修），commit。
+4. ✅ **F1 回歸測試（2026-07-18 瘦身版完成）**：已併入 `backend/test/e2e-online.mjs`
+   （「算分 → 鎖定同步」之後插入兩步），只驗後端狀態自癒、不驗 chip UI。實際情境：
+   算分後以 `rounds` 欄位斷言 R1=locked → `M.route('**/rounds/1/unlock', abort)` →
+   按「解除鎖定」＋確認 → 驗後端仍 locked → **reload（保持 abort）**＋等 ≥1 次對帳 →
+   驗仍 locked（舊版 F1 在此永久卡死）→ unroute → **1.6s 自癒為 open** → 重新算分還原
+   （後端回 locked），後續 18 步不受影響。e2e 共 20 步 ALL PASS。
+   實作備忘：e2e 的 M 端沒用 `addInitScript`（狀態自然存 localStorage），§6 seed 教訓
+   不適用；但 **reload 會重置 `showOnlinePanel`**，需重點「線上回報」開面板，否則後面
+   「token 外洩偵測」步驟找不到桌況 chip。
+5. ✅ 本節已更新為已驗證、§5 進度與 §7 表格已更新（F1/F2/F5 → 已修），commit。
 
 **設計取捨備忘**：F3（幽靈鎖定輪次）**維持原樣未修**——scored 但後端無 row 的輪次仍會
 upsert 出無 pairing 的 locked row，因為這正是 S1 的保護行為（裁判端看到鎖定、409 擋更正），

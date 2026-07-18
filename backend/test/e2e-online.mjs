@@ -198,6 +198,50 @@ async function judgeSubmitFlow(page) {
   step(lockedSummary >= 2 ? '✅' : '❌', '算分 → 鎖定同步', 'P1 顯示 🔒 已鎖定＋五組摘要（含加賽註記）');
   await P1.screenshot({ path: path.join(OUT, '07-P1-locked.png') });
 
+  // ── P0.1 F1 回歸：解鎖推送失敗 → reload → 無狀態對帳自癒（docs/online-score-sync-drift.md §7）──
+  // 只驗後端狀態（results 的 rounds 欄位），不驗 chip UI（斷言脆弱，F2 靠人工目視）。
+  // page.route 掛在 M 頁面上，reload 後仍生效；輪詢 effect 只依賴 localStorage 的
+  // wgpOnlineSync，reload 後不開面板也會自動恢復輪詢＋對帳。
+  const roundsStatus = async () => {
+    const r = await fetch(`${API}/events/${cfg.eventId}/results`,
+      { headers: { Authorization: `Bearer ${cfg.adminToken}` } });
+    return new Map(((await r.json()).rounds || []).map(x => [x.round_no, x.status]));
+  };
+  const f1Before = (await roundsStatus()).get(1);          // 算分後：locked
+  await M.route('**/rounds/1/unlock', r => r.abort());
+  await M.getByRole('button', { name: '解除鎖定' }).first().click();
+  await M.waitForSelector('text=解除輪次鎖定');
+  await M.getByRole('button', { name: '解除鎖定' }).last().click();   // dialog okText
+  await wait(1500);                                        // 直接推送已被 abort、本機狀態落 localStorage
+  const f1Still = (await roundsStatus()).get(1);           // 後端應仍 locked
+  await M.reload();
+  await M.waitForSelector('text=WGP TOURNAMENT');
+  await dismissAlerts(M);
+  await M.locator('button', { hasText: '線上回報' }).click(); // reload 後面板重開（後續 token 外洩步驟依賴桌況 chips）
+  await wait(5000);                                        // ≥1 次輪詢對帳（4 秒間隔）跑過，補送 unlock 仍被 abort
+  const f1AfterReload = (await roundsStatus()).get(1);     // 舊版 F1：這裡永遠 locked 且不再重試
+  await M.unroute('**/rounds/1/unlock');
+  let f1Healed = null;
+  for (const t0 = Date.now(); Date.now() - t0 < 12000;) {  // 對帳 4 秒一輪，≤10s 應自癒（留緩衝）
+    if ((await roundsStatus()).get(1) === 'open') { f1Healed = Date.now() - t0; break; }
+    await wait(500);
+  }
+  const f1ok = f1Before === 'locked' && f1Still === 'locked' && f1AfterReload === 'locked' && f1Healed !== null;
+  step(f1ok ? '✅' : '❌', 'F1 回歸：解鎖失敗→reload→自癒',
+    f1ok ? `abort 中後端維持 locked（含 reload 後）；unroute 後 ${(f1Healed / 1000).toFixed(1)}s 自癒為 open`
+         : `before=${f1Before} still=${f1Still} afterReload=${f1AfterReload} healed=${f1Healed}`);
+  await M.screenshot({ path: path.join(OUT, '07b-M-f1-healed.png') });
+
+  // 還原：結果都還在，重新算分 → 直接推送補鎖，後端回 locked，後續流程不受影響
+  await M.locator('button').filter({ hasText: '算分' }).first().click();
+  await dismissAlerts(M);
+  let f1Relocked = false;
+  for (const t0 = Date.now(); Date.now() - t0 < 12000;) {
+    if ((await roundsStatus()).get(1) === 'locked') { f1Relocked = true; break; }
+    await wait(500);
+  }
+  step(f1Relocked ? '✅' : '❌', 'F1 還原：重新算分', '後端 R1 回 locked，流程繼續');
+
   // ── R2：換輪 → 抓對 → 發佈 → P1 自動進入第 2 輪並回報 5:0 ──
   await M.locator('button[title^="切換當前輪次到 R2"]').click();
   await M.locator('button').filter({ hasText: '抓對' }).first().click();
