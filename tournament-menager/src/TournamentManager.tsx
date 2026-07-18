@@ -2081,12 +2081,32 @@ const handleFileUpload = (event) => {
   const resetSystem = async () => {
     const ok = await dialog.confirm({
       title: '重設系統',
-      message: '確定要重設系統嗎？\n所有輪次的桌次、比賽結果及選手資料將全部清除，此操作無法復原。',
+      message: '確定要重設系統嗎？\n所有輪次的桌次、比賽結果及選手資料將全部清除，此操作無法復原。'
+        + (onlineCfg ? `\n\n⚠ 線上賽事「${onlineCfg.eventName}」進行中——下一步將詢問如何處理。` : ''),
       tone: 'error',
       danger: true,
       okText: '確定重設',
     });
     if (!ok) return;
+
+    // S6 重設防呆（docs/online-score-sync-drift.md §3 P2）：線上賽事不隨重設自動結束，
+    // 放著不管會留下「QR 卡有效、裁判照報、本機無處可套」的孤兒賽事；且本機清空後
+    // 若仍連線，對帳會把後端已鎖輪次全部解開。故二擇一：一併結束、或至少斷線
+    if (onlineCfg) {
+      const closeToo = await dialog.confirm({
+        title: '一併結束線上賽事？',
+        message: `重設不會自動結束線上賽事「${onlineCfg.eventName}」。\n` +
+          '建議一併結束：伺服器資料即刻刪除、QR 卡與裁判端立即失效。\n' +
+          '若保留：後端賽事與 QR 卡繼續有效，但本機將中斷連線——憑證只存在本機，' +
+          '之後將無法再管理或結束它，殘留資料要到 7 天後才被自動清除。',
+        tone: 'warn',
+        danger: true, // 後果重大：不給 ESC／點背景關閉，必須明確按鈕選擇
+        okText: '一併結束線上賽事',
+        cancelText: '保留（僅中斷本機連線）',
+      });
+      if (closeToo) await doCloseOnlineEvent(false);
+      else disconnectOnlineLocal();
+    }
 
     // 設置強制初始化標記，確保創建全新玩家資料
     setForceNewPlayers(true);
@@ -2491,6 +2511,36 @@ const handleFileUpload = (event) => {
   };
 
   // 結束線上賽事：伺服器資料立即刪除、token 全數失效（個資最小化；規劃 §3）
+  // 中斷本機與線上賽事的連線：清憑證即停輪詢（輪詢 effect 依賴 onlineCfg）並清掉線上衍生狀態。
+  // 重設流程也靠它堵住「本機清空後殘留對帳把後端已鎖輪次全部解開」的路徑（S6 相鄰問題）
+  const disconnectOnlineLocal = () => {
+    onlineSync.saveSyncConfig(null);
+    setOnlineCfg(null);
+    setTablesStatus(null);
+    setJudgeReports({});
+    setDroppedReports({});
+    setPublishedPairings({});
+    setLockSyncPending([]);
+  };
+
+  // 結束線上賽事的實作本體（呼叫端自行負責確認視窗）。
+  // strict=true（面板按鈕）：後端回非 unauthorized 錯誤時不清本機、讓操作者重試；
+  // strict=false（重設流程）：後端連不上也照樣斷線，殘留賽事由 7 天 retention 雙保險回收
+  const doCloseOnlineEvent = async (strict: boolean) => {
+    if (!onlineCfg) return;
+    try {
+      await onlineSync.closeEvent(onlineCfg);
+      message.success('線上賽事已結束，伺服器資料已刪除');
+    } catch (e: any) {
+      // 憑證已失效（多半是已被結束過）→ 照樣清掉本機設定
+      if (strict && e.message !== 'unauthorized') {
+        message.error(`結束線上賽事失敗：${e.message}`);
+        return;
+      }
+    }
+    disconnectOnlineLocal();
+  };
+
   const closeOnlineEvent = async () => {
     if (!onlineCfg) return;
     const ok = await dialog.confirm({
@@ -2501,21 +2551,7 @@ const handleFileUpload = (event) => {
       okText: '結束並刪除',
     });
     if (!ok) return;
-    try {
-      await onlineSync.closeEvent(onlineCfg);
-      message.success('線上賽事已結束，伺服器資料已刪除');
-    } catch (e: any) {
-      // 憑證已失效（多半是已被結束過）→ 照樣清掉本機設定
-      if (e.message !== 'unauthorized') {
-        message.error(`結束線上賽事失敗：${e.message}`);
-        return;
-      }
-    }
-    onlineSync.saveSyncConfig(null);
-    setOnlineCfg(null);
-    setTablesStatus(null);
-    setJudgeReports({});
-    setLockSyncPending([]);
+    await doCloseOnlineEvent(true);
   };
 
   // 列印裁判 QR 卡（印出後由計分台保管——卡片上有註記；規劃 4.1）

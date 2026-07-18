@@ -444,6 +444,36 @@ async function judgeSubmitFlow(page) {
   step(backToCreate ? '✅' : '❌', '結束賽事', '伺服器資料刪除、裁判頁顯示憑證失效、面板回到建立畫面');
   await P2.screenshot({ path: path.join(OUT, '10-P2-invalid.png') });
 
+  // ── S6 回歸：線上賽事進行中按「重設」→ 防呆兩層確認 → 一併結束＋本機重設 ──
+  // （docs/online-score-sync-drift.md §3 P2）建一場新賽事再重設，驗證：後端賽事被刪、
+  // wgpOnlineSync 清除（輪詢停止）、本機資料歸零
+  await M.locator('input[placeholder^="後端 API 網址"]').fill(API);
+  await M.getByRole('button', { name: /建立線上賽事/ }).click();
+  await dismissAlerts(M);
+  await M.waitForSelector('text=已連線', { timeout: 15000 });
+  const cfg2 = JSON.parse(await M.evaluate(() => localStorage.getItem('wgpOnlineSync')));
+  await M.getByRole('button', { name: '重設' }).click();
+  await M.waitForSelector('text=線上賽事「');                    // 第一層確認帶線上警告
+  await M.getByRole('button', { name: '確定重設' }).click();
+  await M.waitForSelector('text=一併結束線上賽事？');            // 第二層：處理線上生命週期
+  await M.getByRole('button', { name: '一併結束線上賽事' }).click();
+  await dismissAlerts(M);
+  await wait(800);   // 重設後 auto-save 會把全新初始狀態寫回 localStorage，等它落地再驗
+  const s6Sync = await M.evaluate(() => localStorage.getItem('wgpOnlineSync'));
+  // 本機狀態歸零 = 無任何桌次/成績/裁判紀錄（key 會被初始狀態重寫，不能驗 null）
+  const s6St = JSON.parse(await M.evaluate(() => localStorage.getItem('tournamentManagerState')) || 'null');
+  const s6LocalClean = !s6St ||
+    (Object.keys(s6St.matchesByRound || {}).length === 0 &&
+     (s6St.scoredRounds || []).length === 0 &&
+     Object.keys(s6St.judgeReports || {}).length === 0);
+  const s6Backend = await fetch(`${API}/events/${cfg2.eventId}/results`,
+    { headers: { Authorization: `Bearer ${cfg2.adminToken}` } });
+  const s6ok = s6Sync === null && s6LocalClean && s6Backend.status === 401;
+  step(s6ok ? '✅' : '❌', 'S6 回歸：重設防呆（一併結束）',
+    s6ok ? '兩層確認後：後端賽事已刪（401）、wgpOnlineSync 清除、本機狀態歸零'
+         : `sync=${s6Sync !== null} localClean=${s6LocalClean} backend=${s6Backend.status}`);
+  await M.screenshot({ path: path.join(OUT, '12-M-s6-reset.png') });
+
   for (const [k, v] of Object.entries(errs)) {
     if (v.length) step('⚠️', `${k} pageerror`, v.join(' | '));
   }
