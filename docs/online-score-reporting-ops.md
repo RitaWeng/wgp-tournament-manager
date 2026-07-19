@@ -159,7 +159,7 @@ database_id 已在 `wrangler.toml`，不需重建資料庫。
 
 ### 其他待辦
 
-- [x] 前端 develop → gh-pages preview 部署（主控端需從 GitHub Pages 開，QR 卡網址才正確）——已完成，preview 現為 v1.5.0（2026-07-18，P0.1 含後端一併部署）
+- [x] 前端 develop → gh-pages preview 部署（主控端需從 GitHub Pages 開，QR 卡網址才正確）——已完成，preview 現為 v1.5.1（2026-07-19，P1/P2 全結案＋匯入身分防呆；後端同日重新部署）
 - [ ] 真手機實測（iOS Safari + Android Chrome 各走完一輪回報）——Phase 3 驗收的最後一項
 - [ ] 小型練習賽試跑（Phase 5），收集裁判回饋
 - [x] §2.1 列的三個次要問題——已全數解決（SETUP_KEY 2026-07-08；retention 格式與
