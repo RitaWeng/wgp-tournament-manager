@@ -47,6 +47,10 @@
 3. 主控端「拒絕採計」的 revision 決定只存在記憶體，重新整理頁面後同一筆會再跳一次確認窗。
    —— **已於 2026-07-19 修正**（`judgeReports` 併入 appState 持久化，重載／匯出匯入都保留；
    e2e 加回歸步驟），此項已解決。
+   —— **同日補強**（Codex review 發現）：持久化後，匯入「別場線上賽事」的備份會把該場的
+   高 version 紀錄蓋進來，讓現行賽事的合法回報被靜默跳過。修法：匯出記 `onlineEventId`，
+   匯入時僅同一場（或未連線的換機接手）才保留 `judgeReports`／`droppedReports`／
+   `publishedPairings`，不同場或舊格式備份一律清空並提示。
 
 ### 2.2 修正 commit `ddf3a2e`（審查中發現並修復）
 
@@ -105,7 +109,7 @@ fast-forward 併入 develop（`c1cf006..ddf3a2e`）並推上 GitHub。
 
 ```bash
 cd backend
-npm test          # 28 項整合測試（Windows/Mac 都能跑）
+npm test          # 31 項整合測試（Windows/Mac 都能跑）
 npm run deploy    # 重新部署（需已 wrangler login）
 ```
 

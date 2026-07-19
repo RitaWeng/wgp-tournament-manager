@@ -720,6 +720,9 @@ const TournamentManager = () => {
         judgeReports, // 換機接手同一場線上賽事時，拒絕採計決定一併帶走
         droppedReports,
         publishedPairings,
+        // 上面三個 map 綁定特定線上賽事：記下賽事身分，匯入時比對（不同賽事的紀錄會
+        // 讓 processJudgeResults 憑高 version 靜默跳過現行賽事的合法回報）
+        onlineEventId: onlineCfg?.eventId ?? null,
         projectionTitle,
         standingsTopN,
         exportedAt: new Date().toISOString() // 記錄下載時間
@@ -781,11 +784,19 @@ const TournamentManager = () => {
         if (appState.scoredRounds !== undefined) {
           setScoredRounds(appState.scoredRounds);
         }
-        // 線上回報處理紀錄整組替換（舊備份缺欄位時清空）：沿用匯入前的現值會讓
-        // 殘留的高 version judgeReports 把匯入後的合法回報靜默擋掉
-        setJudgeReports(appState.judgeReports ?? {});
-        setDroppedReports(appState.droppedReports ?? {});
-        setPublishedPairings(appState.publishedPairings ?? {});
+        // 線上回報處理紀錄綁定特定賽事，只在備份屬於同一場線上賽事時才保留：
+        // 沿用匯入前的現值、或吃進別場賽事的紀錄，都會讓殘留的高 version judgeReports
+        // 把合法回報靜默擋掉。備份沒記賽事身分（舊格式）一律清空；未連線時保留
+        // （換機接手：先匯入、後連線，建立新賽事時另有清空）
+        const importedEventId = appState.onlineEventId ?? null;
+        const sameEvent = importedEventId != null &&
+          (onlineCfg == null || onlineCfg.eventId === importedEventId);
+        setJudgeReports(sameEvent ? (appState.judgeReports ?? {}) : {});
+        setDroppedReports(sameEvent ? (appState.droppedReports ?? {}) : {});
+        setPublishedPairings(sameEvent ? (appState.publishedPairings ?? {}) : {});
+        if (!sameEvent && onlineCfg && appState.judgeReports && Object.keys(appState.judgeReports).length) {
+          message.warning('備份來自另一場（或未記名）線上賽事，其線上處理紀錄未匯入；已處理過的裁判回報可能會再次跳出確認窗');
+        }
         if (appState.projectionTitle !== undefined) {
           setProjectionTitle(appState.projectionTitle);
         }

@@ -10,7 +10,7 @@
  */
 import { chromium, devices } from 'playwright';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -307,6 +307,76 @@ async function judgeSubmitFlow(page) {
   } else {
     step('⚠️', 'B2 回歸：拒絕採計持久化', '略過（revision 警示未跳窗）');
   }
+
+  // ── 匯入身分防呆回歸：別場賽事的備份不得污染現行賽事的線上處理紀錄 ──
+  // 下載狀態 → 竄改 onlineEventId 匯入（應清空三個 map＋警示）→ 原檔匯入（應完整保留）。
+  // 斷言用鎖定輪（R1）的 key：鎖定輪回報被守衛丟棄、輪詢不會重建它，與 4 秒輪詢無競態。
+  // 注意 message.* 是帶「我知道了」的 dialog（非 toast）：B2 reload 後的輪詢會晚到地
+  // 跳 dialog（原 27 步是被 S7 的 dismissAlerts 順手吃掉），本步驟插在中間，
+  // 所有點擊都要能在 dialog 冒出時清掉重試，且把內容記錄下來供診斷
+  const drainDialogs = async (tag) => {
+    for (let i = 0; i < 10; i++) {
+      const ov = M.locator('div[role="presentation"]');
+      if (!(await ov.count())) return;
+      const txt = (await ov.last().innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 160);
+      const ok = M.getByRole('button', { name: '我知道了' });
+      const keep = M.getByRole('button', { name: '維持現狀' });
+      if (await ok.count()) { console.log(`DIAG[${tag}] alert：`, txt); await ok.first().click(); }
+      else if (await keep.count()) { console.log(`DIAG[${tag}] confirm→維持現狀（照操作者原決定）：`, txt); await keep.first().click(); }
+      else {
+        console.log(`DIAG[${tag}] 未知對話框：`, txt);
+        await M.screenshot({ path: path.join(OUT, 'diag-stray-dialog.png') });
+        return;
+      }
+      await wait(200);
+    }
+  };
+  const clickThroughDialogs = async (locator, tag) => {
+    for (let i = 0; i < 5; i++) {
+      try { await locator.click({ timeout: 3000 }); return; }
+      catch { await drainDialogs(tag); }
+    }
+    throw new Error(`clickThroughDialogs(${tag})：重試後仍點不到`);
+  };
+  await wait(4500);                                    // 跨過 reload 後下一個輪詢週期
+  await drainDialogs('匯入前');
+  await clickThroughDialogs(M.locator('button[title="匯入/匯出 Excel 與狀態備份"]'), '開面板');
+  const [bkDl] = await Promise.all([
+    M.waitForEvent('download'),
+    M.getByRole('button', { name: '下載狀態' }).click(),
+  ]);
+  const bkDir = mkdtempSync(path.join(tmpdir(), 'wgp-e2e-backup-'));
+  const bkPath = path.join(bkDir, 'backup.json');
+  await bkDl.saveAs(bkPath);
+  const bk = JSON.parse(readFileSync(bkPath, 'utf8'));
+  const probeKey = Object.keys(bk.judgeReports || {}).find(k => k.startsWith('1-'));
+  const foreignPath = path.join(bkDir, 'foreign.json');
+  writeFileSync(foreignPath, JSON.stringify({ ...bk, onlineEventId: 'evt-e2e-foreign' }));
+  await M.locator('input[accept=".json"]').setInputFiles(foreignPath);
+  await M.waitForSelector('text=備份來自另一場', { timeout: 5000 });
+  await drainDialogs('別場匯入後');                     // 關掉 warning＋success dialog
+  const savedJudgeReports = () => M.evaluate(() =>
+    JSON.parse(localStorage.getItem('tournamentManagerState') || '{}').judgeReports || {});
+  let foreignCleared = false;
+  for (const t0 = Date.now(); Date.now() - t0 < 8000;) {
+    if (!(probeKey in await savedJudgeReports())) { foreignCleared = true; break; }
+    await wait(300);
+  }
+  await M.locator('input[accept=".json"]').setInputFiles(bkPath);   // 原檔（同賽事）匯回
+  let ownKept = false;
+  for (const t0 = Date.now(); Date.now() - t0 < 8000;) {
+    const jr = await savedJudgeReports();
+    if (probeKey in jr &&
+        JSON.stringify(jr[probeKey]) === JSON.stringify(bk.judgeReports[probeKey])) { ownKept = true; break; }
+    await wait(300);
+  }
+  await drainDialogs('原檔匯回後');                     // 關掉 success dialog 再收面板
+  await clickThroughDialogs(M.locator('button[title="匯入/匯出 Excel 與狀態備份"]'), '收面板');
+  const importGuardOk = bk.onlineEventId === cfg.eventId && !!probeKey && foreignCleared && ownKept;
+  step(importGuardOk ? '✅' : '❌', '匯入防呆：備份賽事身分比對',
+    importGuardOk
+      ? '匯出含 onlineEventId；別場備份匯入→紀錄清空＋警示；原備份匯入→紀錄保留'
+      : `exportId=${bk.onlineEventId === cfg.eventId} probe=${probeKey} cleared=${foreignCleared} kept=${ownKept}`);
 
   // ── S7 回歸：鎖定競態的更正不再無聲消失（守衛 A 可見化，drift doc §3 P1）──
   // 模擬：lock 推送被斷（後端仍 open）→ M 算分鎖定 R2 → P2 合法送出更正（HTTP 200）
